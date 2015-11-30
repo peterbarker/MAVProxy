@@ -68,10 +68,14 @@ class MavGraph(object):
         self.labels = None
         self.multi = False
         self.modes_plotted = {}
+        self.units = []
 
     def add_field(self, field):
         '''add another field to plot'''
         self.fields.append(field)
+
+    def add_unit(self, unit):
+        self.units.append(unit)
 
     def add_mav(self, mav):
         '''add another data source to plot'''
@@ -331,7 +335,12 @@ class MavGraph(object):
             if labels:
                 lab = labels[fi*len(self.fields):(fi+1)*len(self.fields)]
             else:
-                lab = self.fields[:]
+                lab = []
+                for i in range(0,len(self.fields)):
+                    if len(self.units) > i and self.units[i] is not None:
+                        lab.append("%s (%s)" % (self.fields[i], self.units[i]))
+                    else:
+                        lab.append(self.fields[i])
             if self.multi:
                 col = colors[:]
             else:

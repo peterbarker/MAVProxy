@@ -9,6 +9,7 @@ import math, re
 import Queue
 import fnmatch
 import threading, multiprocessing
+import traceback
 from math import *
 from MAVProxy.modules.lib import rline
 from MAVProxy.modules.lib import wxconsole
@@ -23,6 +24,8 @@ from MAVProxy.modules.lib import wxsettings
 from MAVProxy.modules.lib.graphdefinition import GraphDefinition
 from lxml import objectify
 import pkg_resources
+
+debug = False
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
@@ -193,7 +196,7 @@ def load_graphs():
             mestate.console.writeln("Loaded %s" % f)
     mestate.graphs = sorted(mestate.graphs, key=lambda g: g.name)
 
-def graph_process(fields):
+def graph_process(fields, units):
     '''process for a graph'''
     mestate.mlog.reduce_by_flightmodes(mestate.flightmode_selections)
     
@@ -207,13 +210,70 @@ def graph_process(fields):
     mg.add_mav(mestate.mlog)
     for f in fields:
         mg.add_field(f)
+    for u in units:
+        mg.add_unit(u)
     mg.process()
     mg.show()
+
+def units_for_fields(fields):
+    '''find units for list of supplied fields.
+    Until we modify mlog to provide unit information, we need to do
+some relatively hard work to find units.  We look through the first
+<n> messages for an appropriate instance of each message we want units
+for.  We then use that message's format reference to find the units
+for the field.
+    '''
+    ret = [None] * len(fields)
+
+    fields_to_find = {}
+    for i in range(0,len(fields)):
+        (first,second) = fields[i].split(".")
+        if first is None or second is None:
+            continue
+        if first not in fields_to_find:
+            fields_to_find[first] = {}
+        fields_to_find[first][second] = i
+
+    msgcount = 0
+    while msgcount < 10000 and len(fields_to_find):
+        msg = mestate.mlog.recv_match()
+
+        # not all message types support get_unit yet; e.g. DFMessage
+        # does, MAVLink_statustext_message does not:
+        if getattr(msg, "get_unit", None) == None:
+            break
+
+        msgcount += 1
+
+        msg_type = msg.get_type()
+
+        if msg_type not in fields_to_find:
+            continue
+
+        fields = fields_to_find[msg_type]
+        unit = None
+
+        for field in fields.keys():
+            unit = msg.get_unit(field)
+
+            if unit is None:
+                del fields_to_find[msg_type][field]
+                continue
+
+            ret[fields_to_find[msg_type][field]] = unit
+            del fields_to_find[msg_type][field]
+
+    mestate.mlog.rewind()
+
+    return ret
 
 def display_graph(graphdef):
     '''display a graph'''
     mestate.console.write("Expression: %s\n" % ' '.join(graphdef.expression.split()))
-    child = multiprocessing.Process(target=graph_process, args=[graphdef.expression.split()])
+
+    fields = graphdef.expression.split()
+    units = units_for_fields(fields)
+    child = multiprocessing.Process(target=graph_process, args=[fields, units])
     child.start()
 
 def cmd_graph(args):
@@ -380,6 +440,8 @@ def process_stdin(line):
         fn(args[1:])
     except Exception as e:
         print("ERROR in command %s: %s" % (args[1:], str(e)))
+        if debug:
+            traceback.print_exc()
 
 def input_loop():
     '''wait for user input'''
