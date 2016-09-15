@@ -157,6 +157,7 @@ class rfsurvey(mp_module.MPModule):
         """Initialise module"""
         super(rfsurvey, self).__init__(mpstate, "rfsurvey", "encapsulation of RF survey messages")
 
+        self.mpstate = mpstate
         self.rfsurvey_settings = mp_settings.MPSettings(
             [ ('verbose', bool, False),
               ('csv', bool, True),
@@ -331,6 +332,8 @@ class rfsurvey(mp_module.MPModule):
 
         try:
             self.master.mav.data64_send(self.data64_type, len(orddata), orddata)
+            for m in self.mpstate.mav_outputs:
+                m.mav.data64_send(self.data64_type, len(orddata), orddata)
         except Exception as e:
             print("Got exception: %s" % str(e))
             print(traceback.format_exc(e))
@@ -340,7 +343,7 @@ class rfsurvey(mp_module.MPModule):
         self.csv_fh = None
 
     def open_new_csv_fh(self):
-        filename = "rfsurvey-%s.csv" % (time.strftime("%Y%m%d%H%M%s", time.localtime()),)
+        filename = "rfsurvey-%s.csv" % (time.strftime("%Y%m%d%H%M%S", time.localtime()),)
         self.debug("Opening CSV (%s)" % (filename,))
         bufsize = 0
         self.csv_fh = io.open(filename, "wb", bufsize)
