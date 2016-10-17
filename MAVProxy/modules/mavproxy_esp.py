@@ -3,13 +3,8 @@
 ESP Module
 Peter Barker, October 2016
 
-This module simply serves as a starting point for your own MAVProxy module.
+TODO: Fill this descrition in...
 
-1. copy this module sidewise (e.g. "cp mavproxy_ESP.py mavproxy_coolfeature.py"
-2. replace all instances of "ESP" with whatever your module should be called
-(e.g. "coolfeature")
-
-3. trim (or comment) out any functionality you do not need
 '''
 
 import errno
@@ -38,17 +33,6 @@ class esp_ParamState(ParamState):
     def __init__(self, params, logdir, vehicle_name, logfile):
         super(esp_ParamState,self).__init__(params, logdir, vehicle_name, logfile)
         self.params = params
-        self.index_to_baud = [
-            "57600",
-            "115200",
-            "230400",
-            "460800",
-            "921600"
-        ]
-        self.baud_to_index = {}
-        i = 0
-        for baud in self.index_to_baud:
-            self.baud_to_index[i] = baud
 
     def emit_param_value(self, name, value):
         print("%-16.16s %s" % (name, value))
