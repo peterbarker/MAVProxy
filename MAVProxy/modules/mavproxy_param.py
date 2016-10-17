@@ -7,7 +7,7 @@ from MAVProxy.modules.lib import mp_util
 
 from MAVProxy.modules.lib import mp_module
 
-class ParamState:
+class ParamState(object):
     '''this class is separated to make it possible to use the parameter
        functions on a secondary connection'''
     def __init__(self, mav_param, logdir, vehicle_name, parm_file):
