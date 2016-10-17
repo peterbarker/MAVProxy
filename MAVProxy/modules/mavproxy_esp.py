@@ -19,6 +19,7 @@ import os.path
 import Queue
 import sys
 import time
+import struct
 
 from MAVProxy.modules.lib import mp_module
 from MAVProxy.modules.lib import mp_util
@@ -37,9 +38,34 @@ class esp_ParamState(ParamState):
     def __init__(self, params, logdir, vehicle_name, logfile):
         super(esp_ParamState,self).__init__(params, logdir, vehicle_name, logfile)
         self.params = params
+        self.index_to_baud = [
+            "57600",
+            "115200",
+            "230400",
+            "460800",
+            "921600"
+        ]
+        self.baud_to_index = {}
+        i = 0
+        for baud in self.index_to_baud:
+            self.baud_to_index[i] = baud
 
     def emit_param_value(self, name, value):
-        print("%-16.16s %f" % (name, value))
+        print("%-16.16s %s" % (name, value))
+
+    def handle_command_show_encoded_string(self, conn, mpstate, args, name):
+        v1 = self.params.get(name + str(1))
+        v2 = self.params.get(name + str(2))
+        v3 = self.params.get(name + str(3))
+        v4 = self.params.get(name + str(4))
+
+        if None in [v1, v2, v3, v4]:
+            return
+
+        x = struct.pack("ffff", v1, v2, v3, v4)
+        chars = struct.unpack("cccccccccccccccc", x)
+        v = str("".join(list(chars)))
+        self.emit_param_value(name, v)
 
     def handle_command_show(self, conn, mpstate, args):
         wildcard = "*"
@@ -48,18 +74,39 @@ class esp_ParamState(ParamState):
         # swiped from mavparm.py in pymavlink
         for p in sorted(self.params.keys()):
             if fnmatch.fnmatch(str(p).upper(), wildcard.upper()):
-                if p == "WIFI_PASSWORD1":
-                    for i in range(1,6):
-                        v = v << 8
-                        v |= self.get("WIFI_PASSWORD" + str(i))
-                    pass
-                    self.emit("WIFI_PASSWORD", v)
-                else:
-                    self.emit_param_value(str(p), self.get(p))
+                handled_encoded_string = False
+                for encoded_string_param in [ "WIFI_PASSWORD",
+                                              "WIFI_STA",
+                                              "WIFI_PWDSTA",
+                                              "WIFI_SSID" ]:
+                    if str(p).find(encoded_string_param) == 0:
+                        if str(p).find(encoded_string_param+str(1)) == 0:
+                            self.handle_command_show_encoded_string(conn, mpstate, args, encoded_string_param)
+                        handled_encoded_string = True
+                        break
+                if handled_encoded_string:
+                    continue
+                if p in [ "WIFI_IPADDRESS", "WIFI_IPSTA", "WIFI_GATEWAYSTA", "WIFI_SUBNET_STA" ]:
+                    x = struct.pack("f", self.params.get(p))
+                    self.emit_param_value(p, "%u.%u.%u.%u" % struct.unpack("BBBB", x))
+                    continue
+                if p == "SW_VER":
+                    x = struct.pack("f", self.params.get(p))
+                    (a,b,c,d) = (struct.unpack("BBBB", x))
+                    self.emit_param_value(p, "%u.%u.%u" % (d,c,b))
+                    continue
+                if p in [ "WIFI_CHANNEL", "WIFI_UDP_CPORT", "WIFI_UDP_HPORT", "UART_BAUDRATE"]:
+                    x = struct.pack("f", self.params.get(p))
+                    (a,b,c,d) = (struct.unpack("BBBB", x))
+                    value = ((d<<16)+(c<<16)+(b<<8)+a)
+                    self.emit_param_value(p, "%u" % value)
+                    continue
+
+                self.emit_param_value(str(p), str(self.params.get(p)))
 
     def handle_command(self, conn, mpstate, args):
         if args[0] == "show":
-            return self.handle_command_show(conn, mpstate, args)
+            return self.handle_command_show(conn, mpstate, args[1:])
         super(esp_ParamState, self).handle_command(conn, mpstate, args)
 
 class esp(mp_module.MPModule):
@@ -67,7 +114,7 @@ class esp(mp_module.MPModule):
         """Initialise module"""
         super(esp, self).__init__(mpstate, "esp", "")
         self.params = mavparm.MAVParmDict()
-        self.param_state = ParamState(self.params, self.logdir, self.vehicle_name, "mav-esp.parm")
+        self.param_state = esp_ParamState(self.params, self.logdir, self.vehicle_name, "mav-esp.parm")
         self.verbose = False
 
 #            ('target-component', int, 1),
