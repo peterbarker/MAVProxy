@@ -389,15 +389,15 @@ class WPModule(mp_module.MPModule):
             print("usage: wp movemulti WPNUM WPSTART WPEND <rotation>")
             return
         idx = int(args[0])
-        if idx < 1 or idx > self.wploader.count():
+        if idx < 1 or idx >= self.wploader.count():
             print("Invalid wp number %u" % idx)
             return
         wpstart = int(args[1])
-        if wpstart < 1 or wpstart > self.wploader.count():
+        if wpstart < 1 or wpstart >= self.wploader.count():
             print("Invalid wp number %u" % wpstart)
             return
         wpend = int(args[2])
-        if wpend < 1 or wpend > self.wploader.count():
+        if wpend < 1 or wpend >= self.wploader.count():
             print("Invalid wp number %u" % wpend)
             return
         if idx < wpstart or idx > wpend:
@@ -463,7 +463,7 @@ class WPModule(mp_module.MPModule):
             print("usage: wp changealt WPNUM NEWALT <NUMWP>")
             return
         idx = int(args[0])
-        if idx < 1 or idx > self.wploader.count():
+        if idx < 1 or idx >= self.wploader.count():
             print("Invalid wp number %u" % idx)
             return
         newalt = float(args[1])
@@ -539,7 +539,7 @@ class WPModule(mp_module.MPModule):
             print("usage: wp param WPNUM PNUM <VALUE>")
             return
         idx = int(args[0])
-        if idx < 1 or idx > self.wploader.count():
+        if idx < 1 or idx >= self.wploader.count():
             print("Invalid wp number %u" % idx)
             return
         wp = self.wploader.wp(idx)
