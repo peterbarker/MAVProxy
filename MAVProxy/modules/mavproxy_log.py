@@ -8,7 +8,7 @@ from MAVProxy.modules.lib import mp_module
 class LogModule(mp_module.MPModule):
     def __init__(self, mpstate):
         super(LogModule, self).__init__(mpstate, "log", "log transfer")
-        self.add_command('log', self.cmd_log, "log file handling", ['<download|status|erase|resume|cancel|list>'])
+        self.add_command('log', self.cmd_log, "log file handling", ['<download|status|erase|resume|cancel|list|filter>'])
         self.reset()
 
     def reset(self):
@@ -156,9 +156,35 @@ class LogModule(mp_module.MPModule):
     def default_log_filename(self, log_num):
         return "log%u.bin" % log_num
 
+    def cmd_log_filter_add(self, args):
+        '''log filter add commnads'''
+        usage = "usage: log filter add FIELD1,FIELD2,..."
+        if len(args) < 1:
+            print(usage)
+            return
+        fields = args[0]
+        self.master.mav.log_filter_add_send(self.target_system,
+                                            self.target_component,
+                                            0,
+                                            0,
+                                            fields)
+
+
+    def cmd_log_filter(self, args):
+        '''log filter commnads'''
+        usage = "usage: log filter <add|clear>"
+        if len(args) < 1:
+            print(usage)
+            return
+        if args[0] == "clear":
+            self.master.mav.log_filter_clear_send(self.target_system,
+                                                  self.target_component)
+        elif args[0] == "add":
+            self.cmd_log_filter_add(args[1:])
+
     def cmd_log(self, args):
         '''log commands'''
-        usage = "usage: log <list|download|erase|resume|status|cancel>"
+        usage = "usage: log <list|download|erase|resume|status|cancel|filter>"
         if len(args) < 1:
             print(usage)
             return
@@ -184,6 +210,9 @@ class LogModule(mp_module.MPModule):
             if self.download_file is not None:
                 self.download_file.close()
             self.reset()
+
+        elif args[0] == "filter":
+            self.cmd_log_filter(args[1:])
 
         elif args[0] == "download":
             if len(args) < 2:
