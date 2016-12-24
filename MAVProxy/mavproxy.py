@@ -845,14 +845,17 @@ def input_loop():
 
 
 def run_start_script(opts):
-    if 'HOME' in os.environ and not opts.setup:
+    if opts.setup:
+        return
+    if 'HOME' in os.environ:
         start_script = os.path.join(os.environ['HOME'], ".mavinit.scr")
         if os.path.exists(start_script):
             run_script(start_script)
-    if 'LOCALAPPDATA' in os.environ and not opts.setup:
+    if 'LOCALAPPDATA' in os.environ:
         start_script = os.path.join(os.environ['LOCALAPPDATA'], "MAVProxy", "mavinit.scr")
         if os.path.exists(start_script):
             run_script(start_script)
+
 def run_script(scriptfile):
     '''run a script file'''
     try:
