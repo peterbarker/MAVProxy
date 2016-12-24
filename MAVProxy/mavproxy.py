@@ -847,6 +847,11 @@ def input_loop():
 def run_start_script(opts):
     if opts.setup:
         return
+    if opts.start_script is not None:
+        if len(opts.start_script):
+            run_script(opts.start_script)
+        return
+
     if 'HOME' in os.environ:
         start_script = os.path.join(os.environ['HOME'], ".mavinit.scr")
         if os.path.exists(start_script):
@@ -905,6 +910,8 @@ if __name__ == '__main__':
                       action='store_true', default=False)
     parser.add_option("--setup", dest="setup", help="start in setup mode",
                       action='store_true', default=False)
+    parser.add_option("--start-script", dest="start_script", help="specify replacement for $HOME/.mavinit.scr (use "" for none)",
+                      default=None)
     parser.add_option("--nodtr", dest="nodtr", help="disable DTR drop on close",
                       action='store_true', default=False)
     parser.add_option("--show-errors", dest="show_errors", help="show MAVLink error packets",
