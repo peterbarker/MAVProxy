@@ -844,6 +844,15 @@ def input_loop():
         mpstate.input_queue.put(line)
 
 
+def run_start_script(opts):
+    if 'HOME' in os.environ and not opts.setup:
+        start_script = os.path.join(os.environ['HOME'], ".mavinit.scr")
+        if os.path.exists(start_script):
+            run_script(start_script)
+    if 'LOCALAPPDATA' in os.environ and not opts.setup:
+        start_script = os.path.join(os.environ['LOCALAPPDATA'], "MAVProxy", "mavinit.scr")
+        if os.path.exists(start_script):
+            run_script(start_script)
 def run_script(scriptfile):
     '''run a script file'''
     try:
@@ -1056,14 +1065,7 @@ if __name__ == '__main__':
         for mod in modlist:
             process_stdin('module load %s' % mod)
 
-    if 'HOME' in os.environ and not opts.setup:
-        start_script = os.path.join(os.environ['HOME'], ".mavinit.scr")
-        if os.path.exists(start_script):
-            run_script(start_script)
-    if 'LOCALAPPDATA' in os.environ and not opts.setup:
-        start_script = os.path.join(os.environ['LOCALAPPDATA'], "MAVProxy", "mavinit.scr")
-        if os.path.exists(start_script):
-            run_script(start_script)
+    run_start_script(opts)
 
     if opts.aircraft is not None:
         start_script = os.path.join(opts.aircraft, "mavinit.scr")
