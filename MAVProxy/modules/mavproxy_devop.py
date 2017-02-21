@@ -17,6 +17,9 @@ class Ops(object):
     def __init__(self, devop):
         self.devop = devop
 
+    def debug(self,message):
+        self.devop.debug("DEVOP: " + message)
+
 class OpsSPI(Ops):
     def __init__(self, devop):
         super(OpsSPI, self).__init__(devop)
@@ -58,9 +61,16 @@ class OpsSPI(Ops):
 class OpsI2c(Ops):
     def __init__(self, devop):
         super(OpsI2c, self).__init__(devop)
+        self.scan_probe_timeout = 1 # seconds before resending probe
+        self.scan_request_id = None
+        self.scan_address = None
+        self.scan_last_probe_sent = time.time()
+
+    def idle_task(self):
+        self.scan_idle_task()
 
     def cmd(self, args):
-        usage = "Usage: devop i2c <read|write> BUS ADDRESS REG COUNT [BYTE ...]"
+        usage = "Usage: devop i2c <read|write|scan> BUS ADDRESS REG COUNT [BYTE ...]"
         if len(args) < 1:
             print(usage)
             return;
@@ -68,6 +78,8 @@ class OpsI2c(Ops):
             self.cmd_read(args[1:])
         elif args[0] == 'write':
             self.cmd_write(args[1:])
+        elif args[0] == 'scan':
+            self.cmd_scan(args[1:])
         else:
             print(usage)
 
@@ -93,20 +105,82 @@ class OpsI2c(Ops):
         i2caddr = int(args[1],base=0)
         self.devop.devop_write_send(bustype, spiname, i2cbus,i2caddr, usage, args[1:])
 
+    def cmd_scan(self, args):
+        '''scan for devices'''
+        usage = "Usage: devop i2c scan BUS"
+        if len(args) < 1:
+            print(usage)
+            return
+        self.scan_bus = int(args[0],base=0)
+        self.scan_pending = range(1,128)
+        self.scan_bustype = mavutil.mavlink.DEVICE_OP_BUSTYPE_I2C
+        self.scan_name = "bob" # unused
+        self.scan_results = []
+        self.scan_next_address()
+
+    def scan_do_probe(self, address):
+        self.debug("Sending probe bus=%02x addr=%02x" % (self.scan_bus, address))
+        self.scan_address = address
+        self.devop.master.mav.device_op_read_send(self.devop.target_system,
+                                                  self.devop.target_component,
+                                                  self.devop.request_id,
+                                                  self.scan_bustype,
+                                                  self.scan_bus,
+                                                  address,
+                                                  self.scan_name,
+                                                  0x0,
+                                                  1)
+        self.scan_request_id = self.devop.request_id
+        self.devop.request_id += 1
+        self.scan_last_probe_sent = time.time()
+
+    def scan_idle_task(self):
+        '''check to see if we should re-send the probe'''
+        if self.scan_address is None:
+            return
+        now = time.time()
+        if now - self.scan_last_probe_sent > self.scan_probe_timeout:
+            self.debug("Rescanning %02x" % self.scan_address)
+            self.scan_do_probe(self.scan_address)
+
+    def scan_print_summary(self):
+        print("DEVOP: scan summary:")
+        for result in self.scan_results:
+            (addr,result) = result
+            print("DEVOP: 0x%02x: %d" % (addr, result))
+
+    def scan_next_address(self):
+        if not len(self.scan_pending):
+            self.scan_request_id = None
+            self.scan_address = None
+            self.scan_print_summary()
+            return
+        self.scan_do_probe(self.scan_pending[0])
+        self.scan_pending = self.scan_pending[1:]
+
+    def scan_handle_reply(self, m):
+        if m.request_id != self.scan_request_id:
+            return False
+
+        self.debug("Scan (0x%02x) reply: %d" % (self.scan_address, m.result))
+        if m.result != 4:
+            self.scan_results.append( (self.scan_address, m.result) )
+        self.scan_next_address()
+        return True
 
 
 class DeviceOpModule(mp_module.MPModule):
     def __init__(self, mpstate):
         super(DeviceOpModule, self).__init__(mpstate, "DeviceOp")
         self.add_command('devop', self.cmd_devop, "device operations",
-                         ["<read|write> <spi|i2c>"])
+                         ["<spi|i2c> <read|write|scan>"])
         self.i2c = OpsI2c(self)
         self.spi = OpsSPI(self)
         self.request_id = 1
 
     def cmd_devop(self, args):
         '''device operations'''
-        usage = "Usage: devop <spi|i2c> <read|write> <name|bus> address"
+        usage = "Usage: devop <spi|i2c> <read|write|scan> <NAME|BUS> [ADDRESS]"
         if len(args) < 1:
             print(usage)
             return
@@ -164,6 +238,12 @@ class DeviceOpModule(mp_module.MPModule):
         self.request_id += 1
 
 
+    def debug(self,message):
+        print("DEVOP: " + message)
+
+    def idle_task(self):
+        self.i2c.idle_task()
+
     def read_show_reply(self, m):
         # header
         sys.stdout.write("     ")
@@ -201,6 +281,8 @@ class DeviceOpModule(mp_module.MPModule):
         '''handle a mavlink packet'''
         mtype = m.get_type()
         if mtype == "DEVICE_OP_READ_REPLY":
+            if self.i2c.scan_handle_reply(m):
+                return
             if m.result != 0:
                 print("Operation %u failed: %u" % (m.request_id, m.result))
             else:
