@@ -1,10 +1,20 @@
 #!/usr/bin/env python
 '''remote low level device operations'''
 
-# read first 16 bytes from device@0x1e on bus 1
+# read first 16 bytes from device@0x55 on bus 0 (Toshiba LED on PixHawk):
+# devop i2c read 0 0x55 0 16
+
+# read first 16 bytes from device@0x1e on bus 1:
 # devop i2c read 1 0x1e 0x0 16
 
-# read register at 0x7f on mpu6000 bus:
+# see ToshibaLED_I2C.cpp....
+# disable Toshiba LED on PixHawk 1:
+# devop i2c write 0 0x55 0x04 1 0
+# enable Toshiba LED on PixHawk 1 (write 1 byte (0x03) @0x04 to device 0x55 on bus 0):
+# devop i2c write 0 0x55 0x04 1 0x3
+
+# FIXME: this really should be "devop spi read mpu6000 0x75 1"
+# read register at 0x75 on mpu6000 bus (should be ox68 on a PixHawk):
 # devop spi read mpu6000 0xf5 1
 
 
@@ -37,7 +47,7 @@ class OpsSPI(Ops):
             print(usage)
 
     def cmd_read(self, args):
-        usage = "Usage: devop spi read SPINAME REGISTER COUNT"
+        usage = "Usage: devop spi read SPINAME REG COUNT"
         if len(args) < 3:
             print(usage)
             return
@@ -48,7 +58,7 @@ class OpsSPI(Ops):
         self.devop.devop_read_send(bustype, spiname, i2cbus,i2caddr, usage, args[1:])
 
     def cmd_write(self, args):
-        usage = "Usage: devop spi write SPINAME REGISTER COUNT [BYTE ...]"
+        usage = "Usage: devop spi write SPINAME REG COUNT [BYTE ...]"
         if len(args) < 4:
             print(usage)
             return
@@ -70,7 +80,7 @@ class OpsI2c(Ops):
         self.scan_idle_task()
 
     def cmd(self, args):
-        usage = "Usage: devop i2c <read|write|scan> BUS ADDRESS REG COUNT [BYTE ...]"
+        usage = "Usage: devop i2c <read|write|scan> I2CBUS I2CADDR REG COUNT [BYTE ...]"
         if len(args) < 1:
             print(usage)
             return;
@@ -95,7 +105,8 @@ class OpsI2c(Ops):
         self.devop.devop_read_send(bustype, spiname, i2cbus,i2caddr, usage, args[2:])
 
     def cmd_write(self, args):
-        usage = "Usage: devop i2c write BUS ADDRESS REG COUNT [BYTE ...]"
+        usage = "Usage: devop i2c write I2CBUS I2CADDR REG COUNT [BYTE ...]"
+        print("args: " + str (args))
         if len(args) < 4:
             print(usage)
             return
@@ -103,23 +114,31 @@ class OpsI2c(Ops):
         spiname = "BOB" # unused
         i2cbus = int(args[0],base=0)
         i2caddr = int(args[1],base=0)
-        self.devop.devop_write_send(bustype, spiname, i2cbus,i2caddr, usage, args[1:])
+        self.devop.devop_write_send(bustype, spiname, i2cbus,i2caddr, usage, args[2:])
 
     def cmd_scan(self, args):
         '''scan for devices'''
-        usage = "Usage: devop i2c scan BUS"
+        usage = "Usage: devop i2c scan BUS [FIRST LAST]"
         if len(args) < 1:
             print(usage)
             return
         self.scan_bus = int(args[0],base=0)
-        self.scan_pending = range(1,128)
+        # See https://www.i2c-bus.org/addressing/ for valid addresses
+        first = 16
+        last = 119
+        if (len(args) == 3):
+            start = int(args[1],base=0)
+            stop = int(args[2],base=0)
+        self.scan_pending = range(first,last+2,2)
         self.scan_bustype = mavutil.mavlink.DEVICE_OP_BUSTYPE_I2C
         self.scan_name = "bob" # unused
         self.scan_results = []
         self.scan_next_address()
+        self.scan_count = 0
+        self.scan_attempts = 2 # max times to probe
 
     def scan_do_probe(self, address):
-        self.debug("Sending probe bus=%02x addr=%02x" % (self.scan_bus, address))
+        self.debug("Sending probe bus=0x%02x addr=%02x" % (self.scan_bus, address))
         self.scan_address = address
         self.devop.master.mav.device_op_read_send(self.devop.target_system,
                                                   self.devop.target_component,
@@ -140,8 +159,13 @@ class OpsI2c(Ops):
             return
         now = time.time()
         if now - self.scan_last_probe_sent > self.scan_probe_timeout:
-            self.debug("Rescanning %02x" % self.scan_address)
-            self.scan_do_probe(self.scan_address)
+            if self.scan_count < self.scan_attempts:
+                self.debug("Giving up on %02x" % self.scan_address)
+                self.scan_next_address()
+            else:
+                self.debug("Rescanning %02x" % self.scan_address)
+                self.scan_do_probe(self.scan_address)
+                self.scan_count+=1
 
     def scan_print_summary(self):
         print("DEVOP: scan summary:")
@@ -150,6 +174,7 @@ class OpsI2c(Ops):
             print("DEVOP: 0x%02x: %d" % (addr, result))
 
     def scan_next_address(self):
+        self.scan_count = 0
         if not len(self.scan_pending):
             self.scan_request_id = None
             self.scan_address = None
@@ -220,6 +245,7 @@ class DeviceOpModule(mp_module.MPModule):
         count = int(args[1],base=0)
         args = args[2:]
         if len(args) < count:
+            print("Error: number of bytes supplied < count")
             print(usage)
             return
         bytes = [0]*128
