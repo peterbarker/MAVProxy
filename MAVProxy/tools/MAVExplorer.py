@@ -53,7 +53,8 @@ class MEState(object):
               MPSetting('linestyle', str, None, 'linestyle'),
               MPSetting('show_flightmode', bool, True, 'show flightmode'),
               MPSetting('legend', str, 'upper left', 'legend position'),
-              MPSetting('legend2', str, 'upper right', 'legend2 position')
+              MPSetting('legend2', str, 'upper right', 'legend2 position'),
+              MPSetting('title', str, '', None, tab='Title'),
               ]
             )
 
