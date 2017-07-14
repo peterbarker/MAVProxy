@@ -23,6 +23,13 @@ from MAVProxy.modules.lib import mp_module
 from MAVProxy.modules.lib import mp_util
 from MAVProxy.modules.lib import mp_settings
 
+from multiprocessing import Process
+
+# GTK stuff:
+import gi
+gi.require_version('Gst', '1.0')
+from gi.repository import Gst, GObject, Gtk
+# end GTK tuff
 
 class video(mp_module.MPModule):
     class ZeroconfListener(object):
@@ -62,6 +69,11 @@ class video(mp_module.MPModule):
         self.add_command('video', self.cmd_video, "video module", ['status','set (LOGSETTING)', 'list'])
         self.streams = []
 
+        # GTK stuff:
+        Gst.init(None)
+        GObject.threads_init()
+        # end GTK stuff
+
     def usage(self):
         '''show help on command line options'''
         return "Usage: video <status|set|list>"
@@ -100,6 +112,58 @@ class video(mp_module.MPModule):
                 print("      res: %s" % (res,))
             count += 1
 
+    def play_on_message(self, bus, message):
+        print("Message: %s" % repr(message))
+        t = message.type
+        if t == Gst.MessageType.EOS:
+            self.player.set_state(Gst.State.NULL)
+#            self.button.set_label("Start")
+        elif t == Gst.MessageType.ERROR:
+            err, debug = message.parse_error()
+            print "Error: %s" % err, debug
+            self.player.set_state(Gst.State.NULL)
+#            self.button.set_label("Start")
+        self.player.set_state(Gst.State.NULL)
+
+    def play_on_sync_message(self, bus, message):
+#        print("Sync-Message: %s" % str(message))
+        struct = message.get_structure()
+        if not struct:
+            return
+        message_name = struct.get_name()
+        if message_name == "prepare-xwindow-id":
+            # Assign the viewport
+            imagesink = message.src
+            imagesink.set_property("force-aspect-ratio", True)
+            imagesink.set_xwindow_id(self.movie_window.window.xid)
+
+    def play_destroyed_window(self, *rest):
+        print("Window was destroyed (%s)" % str(*rest))
+        self.player.set_state(Gst.State.NULL)
+
+    def play_on_delete_event(self):
+        print("On delete event!")
+        self.player.set_state(Gst.State.NULL)
+
+    def play_sync_handler(self, bus, message):
+        print("Sync handler! (%s)" % repr(message))
+        return Gst.BusSyncReply.PASS
+    def play_url(self, title, url):
+        #        gst_pipeline = "rtspsrc location=%s ! application/x-rtp,media=video,clock-rate=90000,encoding-name=H264 ! rtph264depay ! avdec_h264 ! autovideosink" % (url,)
+#        imagesink = "autovideosink"        # autovideosink crashes mavproxy hard when the window is closed:
+        imagesink = "xvimagesink sync=0"
+
+        gst_pipeline = "rtspsrc location={url} ! application/x-rtp,media=video,clock-rate=90000,encoding-name=H264 ! rtph264depay ! avdec_h264 ! {imagesink}".format(url=url, imagesink=imagesink)
+        player = Gst.parse_launch(gst_pipeline)
+        bus = player.get_bus()
+        bus.add_signal_watch()
+        bus.enable_sync_message_emission()
+        bus.connect("message", self.play_on_message)
+        bus.connect("sync-message::element", self.play_on_sync_message)
+        bus.set_sync_handler(self.play_sync_handler)
+        player.set_state(Gst.State.PLAYING)
+
+
     def cmd_video_play(self, args):
         try:
             num = int(args[0])
@@ -126,9 +190,12 @@ class video(mp_module.MPModule):
             else:
                 print("Unknown arg (%s)" % str(arg))
                 return
-        (name, info) = self.streams[num]
+        stream = self.streams[num]
+        (name, info) = stream
         url = self.url_for_info(info, props)
         print("URL: %s" % str(url))
+        title = info.properties["name"]
+        self.play_url(title, url)
 
     def cmd_video(self, args):
         '''control behaviour of the module'''
