@@ -210,11 +210,31 @@ class LinkModule(mp_module.MPModule):
             usec = (usec & ~3) | 3 # linknum 3
             self.mpstate.logqueue.put(str(struct.pack('>Q', usec) + m.get_msgbuf()))
 
+    def should_take_timestamp(self, m):
+        if m.get_type() == 'GLOBAL_POSITION_INT':
+            # this is fix time, not boot time
+            return False
+
+        # only handle timestamps from our targetted sysid
+        if (self.target_system != 0 and m.get_srcSystem() != self.target_system):
+            return False
+
+        # We default to target the entire system (target_component() returns 0)
+        # Different components may have different boot times.
+        # So here, if we are not targetting a specific component we take
+        # timestamps only from the autopilot component itself (component_id=1)
+        required_from_component = self.target_component
+        if required_from_component == 0:
+            required_from_component = 1
+        if m.get_srcComponent() != required_from_component:
+            return False;
+
+        return True
+
     def handle_msec_timestamp(self, m, master):
         '''special handling for MAVLink packets with a time_boot_ms field'''
 
-        if m.get_type() == 'GLOBAL_POSITION_INT':
-            # this is fix time, not boot time
+        if not self.should_take_timestamp(m):
             return
 
         msec = m.time_boot_ms
