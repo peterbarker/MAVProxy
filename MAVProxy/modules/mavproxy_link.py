@@ -341,10 +341,6 @@ class LinkModule(mp_module.MPModule):
             self.status.msg_count[m.get_type()] = 0
         self.status.msg_count[m.get_type()] += 1
 
-        if m.get_srcComponent() == mavutil.mavlink.MAV_COMP_ID_GIMBAL and m.get_type() == 'HEARTBEAT':
-            # silence gimbal heartbeat packets for now
-            return
-
         if getattr(m, 'time_boot_ms', None) is not None:
             # update link_delayed attribute
             self.handle_msec_timestamp(m, master)
