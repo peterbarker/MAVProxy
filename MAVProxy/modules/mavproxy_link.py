@@ -365,9 +365,6 @@ class LinkModule(mp_module.MPModule):
             if self.status.heartbeat_error:
                 self.status.heartbeat_error = False
                 self.say("heartbeat OK")
-            if master.linkerror:
-                master.linkerror = False
-                self.say("link %u OK" % (master.linknum+1))
 
             self.status.last_heartbeat = time.time()
             master.last_heartbeat = self.status.last_heartbeat
