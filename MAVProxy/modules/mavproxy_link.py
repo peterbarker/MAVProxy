@@ -294,6 +294,22 @@ class LinkModule(mp_module.MPModule):
             self.say("height %u" % rounded_alt, priority='notification')
 
 
+    def master_should_use_heartbeat(self, m):
+        # use heartbeats only from our target system:
+        if self.target_system != 0 and self.target_system != m.get_srcSystem():
+            return False
+        # We default to target the entire system (target_component() returns 0)
+        # Different components may have different boot times.
+        # So here, if we are not targetting a specific component we take
+        # timestamps only from the autopilot component itself (component_id=1)
+        required_from_component = self.target_component
+        if required_from_component == 0:
+            required_from_component = 1
+        if m.get_srcComponent() != required_from_component:
+            return False;
+
+        return True
+
     def master_callback(self, m, master):
         '''process mavlink message m on master, sending any messages to recipients'''
 
@@ -345,7 +361,7 @@ class LinkModule(mp_module.MPModule):
             if mtype in delayedPackets:
                 return
 
-        if mtype == 'HEARTBEAT' and m.type != mavutil.mavlink.MAV_TYPE_GCS:
+        if mtype == 'HEARTBEAT' and self.master_should_use_heartbeat(m):
             if self.settings.target_system == 0 and self.settings.target_system != m.get_srcSystem():
                 self.settings.target_system = m.get_srcSystem()
                 self.say("online system %u" % self.settings.target_system,'message')
