@@ -721,12 +721,10 @@ class LinkModule(mp_module.MPModule):
                 try:
                     mod.mavlink_packet(m)
                 except Exception as msg:
-                    if self.mpstate.settings.moddebug == 1:
+                    if self.mpstate.settings.moddebug > 2:
+                        print(traceback.format_exc(msg))
+                    elif self.mpstate.settings.moddebug > 0:
                         print(msg)
-                    elif self.mpstate.settings.moddebug > 1:
-                        exc_type, exc_value, exc_traceback = sys.exc_info()
-                        traceback.print_exception(exc_type, exc_value, exc_traceback,
-                                                  limit=2, file=sys.stdout)
 
     def cmd_vehicle(self, args):
         '''handle vehicle commands'''
