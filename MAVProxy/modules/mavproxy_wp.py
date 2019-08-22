@@ -12,35 +12,21 @@ from MAVProxy.modules.lib import mission_item_protocol
 class WPModule(mission_item_protocol.MissionItemProtocolModule):
     def __init__(self, mpstate):
         super(WPModule, self).__init__(mpstate, "wp", "waypoint handling", public = True)
-        self.add_command('wp', self.cmd_wp,       'waypoint management',
-                         ["<list|clear|move|remove|loop|set|undo|movemulti|changealt|param|status|slope>",
-                          "<load|update|save|savecsv|show> (FILENAME)"])
 
+    def gui_menu_items(self):
+        ret = super(WPModule, self).gui_menu_items()
+        ret.extend([
+            MPMenuItem('Editor', 'Editor', '# wp editor'),
+            MPMenuItem('Draw', 'Draw', '# wp draw ',
+                       handler=MPMenuCallTextDialog(title='Mission Altitude (m)',
+                                                    default=100)),
+            MPMenuItem('Loop', 'Loop', '# wp loop'),
+            MPMenuItem('Add NoFly', 'Loop', '# wp noflyadd'),
+        ])
+        return ret
 
-        self.menu_added_console = False
-        self.menu_added_map = False
-        if mp_util.has_wxpython:
-            self.menu = MPMenuSubMenu('Mission',
-                                  items=[MPMenuItem('Editor', 'Editor', '# wp editor'),
-                                         MPMenuItem('Clear', 'Clear', '# wp clear'),
-                                         MPMenuItem('List', 'List', '# wp list'),
-                                         MPMenuItem('Load', 'Load', '# wp load ',
-                                                    handler=MPMenuCallFileDialog(flags=('open',),
-                                                                                 title='Mission Load',
-                                                                                 wildcard='*.txt')),
-                                         MPMenuItem('Save', 'Save', '# wp save ',
-                                                    handler=MPMenuCallFileDialog(flags=('save', 'overwrite_prompt'),
-                                                                                 title='Mission Save',
-                                                                                 wildcard='*.txt')),
-                                         MPMenuItem('Draw', 'Draw', '# wp draw ',
-                                                    handler=MPMenuCallTextDialog(title='Mission Altitude (m)',
-                                                                                 default=100)),
-                                         MPMenuItem('Undo', 'Undo', '# wp undo'),
-                                         MPMenuItem('Loop', 'Loop', '# wp loop'),
-                                         MPMenuItem('Add NoFly', 'Loop', '# wp noflyadd')])
-
-    def create_loader(self):
-        return mavwp.MAVWPLoader()
+    def loader_class(self):
+        return mavwp.MAVWPLoader
 
     def mav_mission_type(self):
         return mavutil.mavlink.MAV_MISSION_TYPE_MISSION
@@ -55,6 +41,12 @@ class WPModule(mission_item_protocol.MissionItemProtocolModule):
     def itemtype(self):
         '''returns description of item'''
         return 'waypoint'
+
+    def index_from_0(self):
+        # other similar user-visible interfaces start indexing
+        # user-modifiable items from 1.  waypoints make index 0
+        # visible to the user.
+        return True
 
     def mavlink_packet(self, m):
         '''handle an incoming mavlink packet'''
@@ -77,15 +69,6 @@ class WPModule(mission_item_protocol.MissionItemProtocolModule):
                     if alt_offset > 0.005:
                         self.say("ALT OFFSET IS NOT ZERO passing DO_LAND_START")
         super(WPModule, self).mavlink_packet(m)
-
-    def idle_task(self):
-        if self.module('console') is not None and not self.menu_added_console:
-            self.menu_added_console = True
-            self.module('console').add_menu(self.menu)
-        if self.module('map') is not None and not self.menu_added_map:
-            self.menu_added_map = True
-            self.module('map').add_menu(self.menu)
-        super(WPModule, self).idle_task()
 
     def get_default_frame(self):
         '''default frame for waypoints'''
@@ -134,7 +117,7 @@ class WPModule(mission_item_protocol.MissionItemProtocolModule):
             self.wploader.add_latlonalt(p[0], p[1], self.settings.wpalt, terrain_alt=use_terrain)
         self.send_all_waypoints()
 
-    def wp_loop(self):
+    def cmd_loop(self, args):
         '''close the loop on a mission'''
         loader = self.wploader
         if loader.count() < 2:
@@ -152,7 +135,7 @@ class WPModule(mission_item_protocol.MissionItemProtocolModule):
         self.master.waypoint_count_send(self.wploader.count())
         print("Closed loop on mission")
 
-    def nofly_add(self):
+    def cmd_noflyadd(self):
         '''add a square flight exclusion zone'''
         latlon = self.mpstate.click_location
         if latlon is None:
@@ -177,6 +160,17 @@ class WPModule(mission_item_protocol.MissionItemProtocolModule):
                                                         start_idx, start_idx+4)
         print("Added nofly zone")
 
+    def insert(self, undo_wp_index, wp):
+        super(WPModule, self).insert(undo_wp_index, wp)
+        self.fix_jumps(self.undo_wp_idx, 1)
+
+    def remove(self, wp):
+        super(WPModule, self).remove(wp)
+        self.fix_jumps(wp.seq, -1)
+
+    def command_name(self):
+        return "wp"
+
     def get_loc(self, m):
         '''return a mavutil.location for item m'''
         t = m.get_type()
@@ -199,7 +193,7 @@ class WPModule(mission_item_protocol.MissionItemProtocolModule):
         except IOError as e:
             return "Bad wp num (%s)" % args[0]
 
-        if num < 1 or num > self.wploader.count():
+        if not self.good_item_num_to_manipulate(num):
             print("Bad item %s" % str(num))
             return
         wp = self.wploader.wp(num)
@@ -212,7 +206,7 @@ class WPModule(mission_item_protocol.MissionItemProtocolModule):
             return
 
         prev = num - 1
-        if prev < 1 or prev > self.wploader.count():
+        if not self.good_item_num_to_manipulate(prev):
             print("Bad item %u" % num)
             return
         prev_wp = self.wploader.wp(prev)
@@ -251,18 +245,19 @@ class WPModule(mission_item_protocol.MissionItemProtocolModule):
             lat_avg * 1e-7,  # x (latitude)
             lng_avg * 1e-7,  # y (longitude)
             alt_avg * 1e-2,  # z (altitude)
+            self.mav_mission_type(),
         )
         self.wploader.insert(wp.seq, new_wp)
         self.fix_jumps(wp.seq, 1)
         self.send_all_waypoints()
 
-    def set_home_location(self):
+    def cmd_sethome(self, args):
         '''set home location from last map click'''
-        try:
-            latlon = self.module('map').click_position
-        except Exception:
-            print("No map available")
+        latlon = self.mpstate.click_location
+        if latlon is None:
+            print("No click position available")
             return
+
         lat = float(latlon[0])
         lon = float(latlon[1])
         if self.wploader.count() == 0:
@@ -291,7 +286,7 @@ class WPModule(mission_item_protocol.MissionItemProtocolModule):
                     wp.param1 = float(p1+delta)
                     self.wploader.set(wp, row)
 
-    def wp_slope(self, args):
+    def cmd_slope(self, args):
         '''show slope of waypoints'''
         if len(args) == 2:
             # specific waypoints
@@ -327,37 +322,47 @@ class WPModule(mission_item_protocol.MissionItemProtocolModule):
                 print("WP%u: slope %s" % (i, slope))
             last_w = w
 
-    def cmd_wp(self, args):
-        '''waypoint commands'''
-        parent_options = "FIXME"
-        usage = "usage: wp <editor|set|loop|changealt|%s>" % parent_options
-        if len(args) < 1:
-            print(usage)
+    def cmd_draw(self, args):
+        if 'draw_lines' not in self.mpstate.map_functions:
+            print("No map drawing available")
             return
+        if self.get_home() is None:
+            print("Need home location - please run gethome")
+            return
+        if len(args) > 1:
+            self.settings.wpalt = int(args[1])
+        self.mpstate.map_functions['draw_lines'](self.wp_draw_callback)
+        print("Drawing %s on map at altitude %d" %
+              (self.itemstype(), self.settings.wpalt))
 
-        if args[0] == "set":
-            if len(args) != 2:
-                print("usage: wp set <wpindex>")
-                return
-            self.master.waypoint_set_current_send(int(args[1]))
-        elif args[0] == "editor":
-            if self.module('misseditor'):
-                self.mpstate.functions.process_stdin("module reload misseditor", immediate=True)
-            else:
-                self.mpstate.functions.process_stdin("module load misseditor", immediate=True)
-        elif args[0] == "sethome":
-            self.set_home_location()
-        elif args[0] == "loop":
-            self.wp_loop()
-        elif args[0] == "noflyadd":
-            self.nofly_add()
-        elif args[0] == "split":
-            self.cmd_split(args[1:])
-        elif args[0] == "slope":
-            self.wp_slope()
+    def cmd_editor(self, args):
+        if self.module('misseditor'):
+            self.mpstate.functions.process_stdin("module reload misseditor", immediate=True)
         else:
-            # assume the parent class handles it:
-            super(WPModule, self).cmd_wp("wp", args)
+            self.mpstate.functions.process_stdin("module load misseditor", immediate=True)
+
+    def cmd_set(self, args):
+        if len(args) != 2:
+            print("usage: wp set <wpindex>")
+            return
+        self.master.waypoint_set_current_send(int(args[1]))
+
+    def commands(self):
+        ret = super(WPModule, self).commands()
+        ret.update({
+            'draw': self.cmd_draw,
+            'editor': self.cmd_editor,
+            'loop': self.cmd_loop,
+            'noflyadd': self.cmd_noflyadd,
+            'set': self.cmd_set,
+            'sethome': self.cmd_sethome,
+            'slope': self.cmd_slope,
+            'split': self.cmd_split,
+        })
+        return ret
+
+    def mission_type_string(self):
+        return 'Mission'
 
 def init(mpstate):
     '''initialise module'''
