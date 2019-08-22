@@ -7,13 +7,164 @@ from pymavlink import mavutil
 import time, os, platform
 from MAVProxy.modules.lib import mp_module
 from MAVProxy.modules.lib import mp_util
+from MAVProxy.modules.lib import mission_item_protocol
+from MAVProxy.modules.lib import rally_fence_shim_module
 
 if mp_util.has_wxpython:
     from MAVProxy.modules.lib.mp_menu import *
 
-class RallyModule(mp_module.MPModule):
+class RallyModule(rally_fence_shim_module.RallyFenceShim):
+    '''RallyModule - a shim/wrapper class around the rally module - which
+    uses the MissionItemProtocol to upload fences - and the old module
+    which uses the RALLY_POINT protocol to upload rally points.  It
+    first uses the old RALLY_POINT protocol, but if it detects the
+    vehicle can handle the new protocol (via
+    AUTOPILOT_VERSION.capabilities) then it switches to the new
+    module.
+    '''
+
     def __init__(self, mpstate):
-        super(RallyModule, self).__init__(mpstate, "rally", "rally point control", public = True)
+        '''initialise shim module - relying on base class for most of it'''
+        super(RallyModule, self).__init__(mpstate, "rally", "rally point management (wrapper)", public = True)
+
+    def oldmodule_class(self):
+        '''if we shouldn't use the mission item protocol, use this legacy
+        class instead'''
+        return OldRallyModule
+
+    def newmodule_class(self):
+        '''if we should use the mission item protocol, use this class'''
+        return NewRallyModule
+
+    def capability_bit_required(self):
+        '''returns bit found in AUTOPILOT_VERSION.capabilities that indicates
+        uploading via mission item protocol is possible'''
+        return mavutil.mavlink.MAV_PROTOCOL_CAPABILITY_MISSION_RALLY
+
+class NewRallyModule(mission_item_protocol.MissionItemProtocolModule):
+    '''uses common MISSION_ITEM protocol base class to provide rally
+    upload/download
+    '''
+
+    def __init__(self, mpstate):
+        '''initialise module; will raise AttributeError if pymavlink is too
+        old to use'''
+        # raise an attribute error if pymavlink is too old:
+        mavwp.MissionItemProtocol_Rally
+        super(NewRallyModule, self).__init__(mpstate,
+                                             "rallynew",
+                                             "rally point management (new)",
+                                             public = True)
+
+    def command_name(self):
+        '''command-line command name'''
+        return "rally"
+
+    def cmd_rally_add(self, args):
+        '''add a rally point at the last map click position'''
+        if not self.check_have_list():
+            return
+        latlon = self.mpstate.click_location
+        if latlon is None:
+            print("No click position available")
+            return
+
+        if len(args) < 1:
+            alt = self.settings.rallyalt
+        else:
+            alt = float(args[0])
+
+        m = mavutil.mavlink.MAVLink_mission_item_int_message(
+            self.target_system,
+            self.target_component,
+            0,    # seq
+            mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,    # frame
+            mavutil.mavlink.MAV_CMD_NAV_RALLY_POINT,    # command
+            0,    # current
+            0,    # autocontinue
+            0.0,  # param1,
+            0.0,  # param2,
+            0.0,  # param3
+            0.0,  # param4
+            int(latlon[0] * 1e7),  # x (latitude)
+            int(latlon[1] * 1e7),  # y (longitude)
+            alt,                   # z (altitude)
+            self.mav_mission_type(),
+        )
+        self.append(m)
+        self.send_all_items()
+
+    def rally_point(self, i):
+        '''return an instance of the old mavlink rally_point message for the
+        item at offset i'''
+        i = self.wploader.item(i)
+        if i is None:
+            return None
+        lat = i.x
+        lng = i.y
+        alt = i.z
+        if i.get_type() == "MISSION_ITEM":
+            lat *= 1e7
+            lng *= 1e7
+            alt *= 100
+        return mavutil.mavlink.MAVLink_rally_point_message(
+            i.target_system,
+            i.target_component,
+            i.seq,
+            self.wploader.count(),
+            lat,
+            lng,
+            alt,
+            0,
+            0,
+            0)
+
+    def rally_count(self):
+        '''return number of waypoints'''
+        return self.wploader.count()
+
+    def commands(self):
+        '''returns map from command name to handling function'''
+        ret = super(NewRallyModule, self).commands()
+        ret.update({
+            "alt": self.cmd_changealt, # backwards-compatability
+            'add': self.cmd_rally_add,
+        })
+        return ret
+
+    @staticmethod
+    def loader_class():
+        return mavwp.MissionItemProtocol_Rally
+
+    def mav_mission_type(self):
+        return mavutil.mavlink.MAV_MISSION_TYPE_RALLY
+
+    def itemstype(self):
+        '''returns description of items in the plural'''
+        return 'rally items'
+
+    def itemtype(self):
+        '''returns description of item'''
+        return 'rally item'
+
+    def mavlink_packet(self, p):
+        super(NewRallyModule, self).mavlink_packet(p)
+
+    def gui_menu_items(self):
+        ret = super(NewRallyModule, self).gui_menu_items()
+        ret.extend([
+            MPMenuItem('Add', 'Add', '# rally add ',
+                       handler=MPMenuCallTextDialog(
+                           title='Rally Altitude (m)',
+                           default=100
+                       )
+            ),
+        ])
+        return ret
+
+class OldRallyModule(mp_module.MPModule):
+    def __init__(self, mpstate):
+        super(OldRallyModule, self).__init__(mpstate, "rallyold", "rally point control (old)", public = True)
         self.rallyloader_by_sysid = {}
         self.add_command('rally', self.cmd_rally, "rally point control", ["<add|clear|land|list|move|remove|>",
                                     "<load|save> (FILENAME)"])
@@ -130,7 +281,7 @@ class RallyModule(mp_module.MPModule):
 
         latlon = self.mpstate.click_location
         if latlon is None:
-            print("No map click position available")
+            print("No click position available")
             return
 
         land_hdg = 0.0
@@ -181,7 +332,7 @@ class RallyModule(mp_module.MPModule):
 
         latlon = self.mpstate.click_location
         if latlon is None:
-            print("No map click position available")
+            print("No click position available")
             return
 
         oldpos = (rpoint.lat*1e-7, rpoint.lng*1e-7)
@@ -295,7 +446,7 @@ class RallyModule(mp_module.MPModule):
         if self.module('map') is not None and self.menu_added_map:
             self.menu_added_map = False
             self.module('map').remove_menu(self.menu)
-        super(RallyModule, self).unload()
+        super(OldRallyModule, self).unload()
 
     def send_rally_point(self, i):
         '''send rally points from fenceloader'''
