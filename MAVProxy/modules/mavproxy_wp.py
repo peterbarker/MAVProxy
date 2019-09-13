@@ -342,10 +342,10 @@ class WPModule(mission_item_protocol.MissionItemProtocolModule):
             self.mpstate.functions.process_stdin("module load misseditor", immediate=True)
 
     def cmd_set(self, args):
-        if len(args) != 2:
+        if len(args) != 1:
             print("usage: wp set <wpindex>")
             return
-        self.master.waypoint_set_current_send(int(args[1]))
+        self.master.waypoint_set_current_send(int(args[0]))
 
     def commands(self):
         ret = super(WPModule, self).commands()
