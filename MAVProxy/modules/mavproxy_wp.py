@@ -347,9 +347,44 @@ class WPModule(mission_item_protocol.MissionItemProtocolModule):
             return
         self.master.waypoint_set_current_send(int(args[0]))
 
+    def cmd_add(self, args):
+        '''add a NAV waypoint at the last map click position'''
+        if not self.check_have_list():
+            return
+        latlon = self.mpstate.click_location
+        if latlon is None:
+            print("No click position available")
+            return
+
+        if len(args) < 1:
+            alt = self.settings.wpalt
+        else:
+            alt = float(args[0])
+
+        m = mavutil.mavlink.MAVLink_mission_item_int_message(
+            self.target_system,
+            self.target_component,
+            0,    # seq
+            mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,    # frame
+            mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,    # command
+            0,    # current
+            0,    # autocontinue
+            0.0,  # param1,
+            0.0,  # param2,
+            0.0,  # param3
+            0.0,  # param4
+            int(latlon[0] * 1e7),  # x (latitude)
+            int(latlon[1] * 1e7),  # y (longitude)
+            alt,                   # z (altitude)
+            self.mav_mission_type(),
+        )
+        self.append(m)
+        self.send_all_items()
+
     def commands(self):
         ret = super(WPModule, self).commands()
         ret.update({
+            'add': self.cmd_add,
             'draw': self.cmd_draw,
             'editor': self.cmd_editor,
             'loop': self.cmd_loop,
