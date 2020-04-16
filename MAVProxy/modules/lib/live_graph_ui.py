@@ -115,15 +115,22 @@ class GraphFrame(wx.Frame):
         """
         state = self.state
 
-        if len(self.data[0]) == 0:
-            print("no data to plot")
-            return
-        vhigh = max(self.data[0])
-        vlow  = min(self.data[0])
-
-        for i in range(1,len(self.plot_data)):
+        vhigh = None
+        vlow  = None
+        for i in range(0,len(self.plot_data)):
+            if len(self.data[i]) == 0:
+                continue
+            if vhigh is None:
+                vhigh = max(self.data[i])
+                vlow = max(self.data[i])
+                continue
             vhigh = max(vhigh, max(self.data[i]))
             vlow  = min(vlow,  min(self.data[i]))
+
+        if vhigh is None:
+            print("no data to plot")
+            return
+
         ymin = vlow  - 0.05*(vhigh-vlow)
         ymax = vhigh + 0.05*(vhigh-vlow)
 
@@ -141,6 +148,8 @@ class GraphFrame(wx.Frame):
             pylab.setp(self.axes.get_legend().get_texts(), fontsize='small')
 
         for i in range(len(self.plot_data)):
+            if self.data[i] is None or len(self.data[i]) < 2:
+                continue
             ydata = numpy.array(self.data[i])
             xdata = self.xdata
             if len(ydata) < len(self.xdata):
@@ -189,7 +198,4 @@ class GraphFrame(wx.Frame):
                 while len(self.data[i]) > len(self.xdata):
                     self.data[i].pop(0)
 
-        for i in range(len(self.plot_data)):
-            if state.values[i] is None or len(self.data[i]) < 2:
-                return
         self.draw_plot()
