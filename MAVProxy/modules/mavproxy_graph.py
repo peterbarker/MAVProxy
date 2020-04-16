@@ -126,7 +126,14 @@ class Graph():
                 labels.append(None)
 
         self.fields = fields[:]
-        self.values = [None] * len(self.fields)
+        # pre-evaluate all field values.  This means fields for
+        # seldom-received packets plot immediately (think
+        # GPS_GLOBAL_ORIGIN)
+        self.values = []
+        for i in range(len(self.fields)):
+            self.values.append(mavutil.evaluate_expression(self.fields[i], self.state.master.messages))
+
+
         self.livegraph = live_graph.LiveGraph(fields,
                                               timespan=state.timespan,
                                               tickresolution=state.tickresolution,
