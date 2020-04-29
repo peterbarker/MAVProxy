@@ -171,7 +171,10 @@ class MissionItemProtocolModule(mp_module.MPModule):
             # print("REQUESTING %u/%u (%u)" % (seq,
             # self.wploader.expected_count, i))
             self.wp_requested[seq] = tnow
+            if self.master.mavlink20():
             if self.settings.wp_use_mission_int:
+                # do inty styuff
+                # else
                 self.master.mav.mission_request_send(
                     self.target_system,
                     self.target_component,
