@@ -114,6 +114,7 @@ class MEState(object):
               MPSetting('paramdocs', bool, True, 'show param docs'),
               MPSetting('max_rate', float, 0, 'maximum display rate of graphs in Hz'),
               MPSetting('vehicle_type', str, 'Auto', 'force vehicle type for mode handling'),
+              MPSetting('source_system', int, None, 'Source system'),
               ]
             )
 
@@ -438,6 +439,20 @@ def cmd_graph(args):
     if xlimits.last_xlim is not None and mestate.settings.sync_xzoom:
         #print("initial: ", xlimits.last_xlim)
         grui[-1].set_xlim(xlimits.last_xlim)
+
+    old_source_system = None
+    if mestate.settings.source_system is not None:
+        old_source_system = mestate.mlog.sysid
+        mestate.mlog.sysid = mestate.settings.source_system
+    try:
+        grui[-1].display_graph(mestate.last_graph, flightmode_colours())
+    finally:
+        if old_source_system is not None:
+            mestate.mlog.sysid = old_source_system
+    global last_xlim
+    if last_xlim is not None and mestate.settings.sync_xzoom:
+        #print("initial: ", last_xlim)
+        grui[-1].set_xlim(last_xlim)
 
 map_timelim_pipes = []
 
