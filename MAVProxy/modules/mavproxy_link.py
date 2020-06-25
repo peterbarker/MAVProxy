@@ -501,10 +501,17 @@ class LinkModule(mp_module.MPModule):
             self.say('Time has wrapped')
             print('Time has wrapped', msec, highest)
             self.status.highest_msec[highest_msec_key] = msec
+            self.status.capabilities = None # re-poll for these
+            self.status.no_capability_support = False
             for mm in self.mpstate.mav_master:
                 mm.link_delayed = False
                 mm.highest_msec[highest_msec_key] = msec
             return
+
+        if (self.status.capabilities is None and
+            msec > 20000):
+            # assume the autopilot is not capable of supplying capabilities
+            self.status.no_capability_support = True
 
         # we want to detect when a link is delayed
         master.highest_msec[highest_msec_key] = msec

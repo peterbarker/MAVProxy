@@ -108,6 +108,8 @@ class MPStatus(object):
         self.last_seq = 0
         self.armed = False
         self.last_bytecounter_calc = 0
+        self.capabilities = None
+        self.no_capability_support = False
 
     class ByteCounter(object):
         def __init__(self):
@@ -147,6 +149,12 @@ class MPStatus(object):
         if time_delta < 1:
             return
         self.last_bytecounter_calc = now
+
+    def get_source_state(self, src):
+        class SourceState(object):
+            def __init__(self):
+                self.msgs = {}
+                self.msg_count = {}
 
         for counter in self.bytecounters['MasterIn']:
             counter.rotate()
@@ -196,6 +204,13 @@ class MPStatus(object):
         f = open('status.txt', mode='w')
         self.show(f)
         f.close()
+
+    def has_capability(self, capa):
+        if self.no_capability_support:
+            return False
+        if self.capabilities is None:
+            return False
+        return self.capabilities & capa
 
 def say_text(text, priority='important'):
     '''text output - default function for say()'''
@@ -1024,6 +1039,17 @@ def send_heartbeat(master):
         MAV_AUTOPILOT_NONE = 4
         master.mav.heartbeat_send(MAV_GROUND, MAV_AUTOPILOT_NONE)
 
+def send_request_capabilities(master):
+    if master.mavlink10():
+        print("Requesting capabilities")
+        master.mav.command_long_send(
+            master.target_system,
+            master.target_component,  # target component
+            mavutil.mavlink.MAV_CMD_REQUEST_AUTOPILOT_CAPABILITIES,
+            0,
+            1,  # 1: Request autopilot version
+            1, 0, 0, 0, 0, 0, 0)
+
 def periodic_tasks():
     '''run periodic checks'''
     if mpstate.status.setup_mode:
@@ -1036,6 +1062,8 @@ def periodic_tasks():
         heartbeat_period.frequency = mpstate.settings.heartbeat
 
     if heartbeat_period.trigger() and mpstate.settings.heartbeat != 0:
+        if mpstate.status.has_capability(mavutil.mavlink.MAV_PROTOCOL_CAPABILITY_MISSION_FENCE):
+            print("Has fence capability")
         mpstate.status.counters['MasterOut'] += 1
         for master in mpstate.mav_master:
             send_heartbeat(master)
