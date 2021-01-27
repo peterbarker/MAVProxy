@@ -199,7 +199,7 @@ if __name__ == "__main__":
     parser.add_option("--flag", default=[], type='str', action='append', help="flag positions")
     parser.add_option("--grid", default=False, action='store_true', help="add a UTM grid")
     parser.add_option("--elevation", action='store_true', default=False, help="show elevation information")
-    parser.add_option("--verbose", action='store_true', default=False, help="show mount actions")
+    parser.add_option("--verbose", action='store_true', default=False, help="show map actions")
     (opts, args) = parser.parse_args()
 
     sm = MPSlipMap(lat=opts.lat,
