@@ -903,6 +903,10 @@ def process_mavlink(slave):
         allow_fwd = False
     if allow_fwd:
         for m in msgs:
+            if (slave.mav.signing.secret_key is not None and
+                not m.get_signed()):
+                continue
+
             target_sysid = getattr(m, 'target_system', -1)
             mbuf = m.get_msgbuf()
             if mpstate.settings.mavfwd_link > 0 and mpstate.settings.mavfwd_link <= len(mpstate.mav_master):

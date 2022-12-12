@@ -29,6 +29,8 @@ class SigningModule(mp_module.MPModule):
             self.cmd_signing_setup(args[1:])
         elif args[0] == 'key':
             self.cmd_signing_key(args[1:])
+        elif args[0] == 'output_key':
+            self.cmd_signing_output_key(args[1:])
         elif args[0] == 'disable':
             self.cmd_signing_disable(args[1:])
         elif args[0] == 'remove':
@@ -87,7 +89,7 @@ class SigningModule(mp_module.MPModule):
     def cmd_signing_key(self, args):
         '''set signing key on connection'''
         if len(args) == 0:
-            print("usage: signing setup passphrase")
+            print("usage: signing key passphrase")
             return
         if not self.master.mavlink20():
             print("You must be using MAVLink2 for signing")
@@ -96,6 +98,23 @@ class SigningModule(mp_module.MPModule):
         key = self.passphrase_to_key(passphrase)
         self.master.setup_signing(key, sign_outgoing=True, allow_unsigned_callback=self.allow_unsigned)
         print("Setup signing key")
+
+    def cmd_signing_output_key(self, args):
+        '''set signing key on connection'''
+        if len(args) == 0:
+            print("usage: signing output_key output_num passphrase")
+            return
+        if not self.master.mavlink20():
+            print("You must be using MAVLink2 for signing")
+            return
+        output_num = int(args[0])
+        if output_num < 0 or output_num > len(self.mpstate.mav_outputs):
+            print("Bad output")
+            return
+        passphrase = args[1]
+        key = self.passphrase_to_key(passphrase)
+        self.mpstate.mav_outputs[output_num].setup_signing(key, sign_outgoing=True, allow_unsigned_callback=self.allow_unsigned)
+        print("Setup signing key on output %u" % output_num)
 
     def cmd_signing_disable(self, args):
         '''disable signing locally'''

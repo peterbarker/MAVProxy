@@ -12,6 +12,7 @@ AP_FLAKE8_CLEAN
 
 from pymavlink import mavutil
 
+import copy
 import fnmatch
 import json
 import math
@@ -925,7 +926,8 @@ class LinkModule(mp_module.MPModule):
                     m.command not in [mavutil.mavlink.MAV_CMD_GET_HOME_POSITION,
                                       mavutil.mavlink.MAV_CMD_DO_DIGICAM_CONTROL]):
                     self.mpstate.console.writeln("Got COMMAND_ACK: %s: %s" % (cmd, res))
-            except Exception:
+            except Exception as e:
+                print("exception: %s" % str(e))
                 self.mpstate.console.writeln("Got MAVLink msg: %s" % m)
 
             if m.command == mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION:
@@ -1058,7 +1060,14 @@ class LinkModule(mp_module.MPModule):
                             from wsproto.connection import ConnectionState
                             if r.ws.state != ConnectionState.OPEN:  # Ensure Websocket handshake is done
                                 continue
-                        r.write(m.get_msgbuf())
+
+                        # if an output has a key assigned then require its use:
+                        if r.mav.signing.secret_key is not None:
+                            c = copy.copy(m)
+                            m.resign_packet(r.mav)
+                            r.write(c.get_msgbuf())
+                        else:
+                            r.write(m.get_msgbuf())
 
             sysid = m.get_srcSystem()
             target_sysid = self.target_system
