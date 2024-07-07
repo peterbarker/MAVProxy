@@ -290,6 +290,11 @@ def colour_for_point_type(mlog, point, instance, options):
 
 def message_to_latlon(type, m, is_expression=False):
     '''convert a message to a lat/lon'''
+    try:
+        return m.get_latlon()
+    except AttributeError:
+        pass
+
     if type in ['GPS', 'GPS2'] and not is_expression:
         status = getattr(m, 'Status', None)
         nsats = getattr(m, 'NSats', None)
