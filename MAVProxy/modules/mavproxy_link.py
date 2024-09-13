@@ -286,6 +286,28 @@ class LinkModule(mp_module.MPModule):
         else:
             print("usage: hl <on|off>")
 
+    def bytes_available_for_reading(self, sock):
+        if self.mpstate.system == 'Windows':
+            print("Windows")
+            try:
+                import ctypes
+                import ctypes.wintypes
+                bytes_available = ctypes.wintypes.DWORD()
+                FIONREAD = 0x4004667F
+                ctypes.windll.ws2_32.ioctlsocket(sock.fileno(), FIONREAD, ctypes.byref(bytes_available))
+                return bytes_available.value
+            except (AttributeError, ImportError):
+                pass
+            return None
+
+        bytes_available = ""
+        try:
+            import fcntl
+            return struct.unpack('I', fcntl.ioctl(sock, 0x541B, struct.pack('I', 0)))[0]
+        except (AttributeError, ImportError):
+            pass
+        return None
+
     def show_link(self):
         '''show link information'''
         for master in self.mpstate.mav_master:
@@ -309,14 +331,11 @@ class LinkModule(mp_module.MPModule):
                 pass
 
             # add an entry for bytes-available-to-read:
-            bytes_available = ""
-            try:
-                import fcntl
-                sock = master.port
-                bytes_available = struct.unpack('I', fcntl.ioctl(sock, 0x541B, struct.pack('I', 0)))[0]
+            bytes_available = self.bytes_available_for_reading(master.port)
+            if bytes_available is not None:
                 bytes_available = f" avail={bytes_available}"
-            except (AttributeError, ImportError):
-                pass
+            else:
+                bytes_available = ""
 
             print("link %s %s (%u packets, %u bytes, %.2fs delay, %u lost, %.1f%% loss, rate:%uB/s%s%s)" % (
                 self.link_label(master),
