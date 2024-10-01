@@ -1360,10 +1360,21 @@ if __name__ == '__main__':
     #version information
     if opts.version:
         #pkg_resources doesn't work in the windows exe build, so read the version file
+        version = None
         try:
-            import pkg_resources
-            version = pkg_resources.require("mavproxy")[0].version
-        except:
+            import importlib.metadata
+            version = importlib.metadata.version("mavproxy")
+        except ImportError:
+            pass
+
+        if version is None:
+            try:
+                import pkg_resources
+                version = pkg_resources.require("mavproxy")[0].version
+            except:
+                pass
+
+        if version is None:
             start_script = mp_util.dot_mavproxy("version.txt")
             f = open(start_script, 'r')
             version = f.readline()
