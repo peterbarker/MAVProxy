@@ -35,7 +35,11 @@ from MAVProxy.modules.lib.mp_settings import MPSettings, MPSetting
 from MAVProxy.modules.lib import wxsettings
 from MAVProxy.modules.lib.graphdefinition import GraphDefinition
 from lxml import objectify
-import pkg_resources
+try:
+    import importlib
+    import importlib.resources
+except ImportError:
+    pass
 from builtins import input
 import datetime
 import matplotlib
@@ -353,8 +357,28 @@ def load_graphs():
         if graphs:
             mestate.graphs.extend(graphs)
             mestate.console.writeln("Loaded %s" % file)
+
     # also load the built in graphs
+    load_built_in_graphs()
+
+    mestate.graphs = sorted(mestate.graphs, key=lambda g: g.name)
+
+def load_built_in_graphs():
+    '''load graph definitions from packaged resources'''
     try:
+        dlist = importlib.resources.files("MAVProxy.tools.graphs")
+        for f in dlist.iterdir():
+            raw = importlib.resources.files("MAVProxy.tools.graphs").joinpath(f).open('r').read()
+            graphs = load_graph_xml(raw, None)
+            if graphs:
+                mestate.graphs.extend(graphs)
+                mestate.console.writeln("Loaded %s" % f)
+        return
+    except Exception:
+        pass
+
+    try:
+        import pkg_resources
         dlist = pkg_resources.resource_listdir("MAVProxy", "tools/graphs")
         for f in dlist:
             raw = pkg_resources.resource_stream("MAVProxy", "tools/graphs/%s" % f).read()
@@ -371,7 +395,6 @@ def load_graphs():
             if graphs:
                 mestate.graphs.extend(graphs)
                 mestate.console.writeln("Loaded %s" % f)
-    mestate.graphs = sorted(mestate.graphs, key=lambda g: g.name)
 
 def flightmode_colours():
     '''return mapping of flight mode to colours'''
@@ -1554,9 +1577,21 @@ if __name__ == "__main__":
 
     if args.version:
         #pkg_resources doesn't work in the windows exe build, so read the version file
+        version = None
         try:
-            version = pkg_resources.require("mavproxy")[0].version
+            import importlib.metadata
+            version = importlib.metadata.version("mavproxy")
         except Exception as e:
+            pass
+
+        if version is None:
+            try:
+                import pkg_resources
+                version = pkg_resources.require("mavproxy")[0].version
+            except Exception:
+                pass
+
+        if version is None:
             start_script = mp_util.dot_mavproxy("version.txt")
             f = open(start_script, 'r')
             version = f.readline()
