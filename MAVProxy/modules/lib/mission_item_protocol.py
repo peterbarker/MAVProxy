@@ -725,7 +725,7 @@ on'''
             self.item_num_to_offset(idx),
             self.item_num_to_offset(idx+count),
             mission_type=self.mav_mission_type())
-        print("Changed %s for WPs %u:%u to %s" % (desc, idx, idx+(count-1), newvalstr))
+        print(f"Changed {desc} for {self.itemstype()} {idx}:{idx+(count-1)} to {newvalstr}")
 
     def cmd_changealt(self, args):
         '''handle wp change target alt of multiple waypoints'''
