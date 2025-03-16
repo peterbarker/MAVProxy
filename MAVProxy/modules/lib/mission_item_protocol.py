@@ -719,13 +719,14 @@ on'''
         self.upload_start = time.time()
         self.loading_waypoints = True
         self.loading_waypoint_lasttime = time.time()
+        last_idx = idx + count - 1
         self.master.mav.mission_write_partial_list_send(
             self.target_system,
             self.target_component,
             self.item_num_to_offset(idx),
-            self.item_num_to_offset(idx+count),
+            self.item_num_to_offset(last_idx),
             mission_type=self.mav_mission_type())
-        print(f"Changed {desc} for {self.itemstype()} {idx}:{idx+(count-1)} to {newvalstr}")
+        print(f"Changed {desc} for {self.itemstype()} {idx}:{last_idx} to {newvalstr}")
 
     def cmd_changealt(self, args):
         '''handle wp change target alt of multiple waypoints'''
