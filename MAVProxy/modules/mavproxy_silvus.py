@@ -10,25 +10,26 @@ To use add this in mavinit.scr for vehicle:
  silvus set nmea_port 11234 # UDP port for NMEA input to radio
 
 thanks to Felix from Amber Technologies for the code this came from
+
+AP_FLAKE8_CLEAN
 '''
 
 import time
-import datetime
 import socket
 import requests
 import threading
 from MAVProxy.modules.lib import mp_module
 from MAVProxy.modules.lib import mp_settings
-from pymavlink import mavutil
+
 
 class SilvusModule(mp_module.MPModule):
     def __init__(self, mpstate):
         super(SilvusModule, self).__init__(mpstate, "Silvus", "Silvus output")
         # filter_dist is distance in metres
         self.silvus_settings = mp_settings.MPSettings([("gnd_ip", str, ""),
-                                                       ("gnd_port", int, 80),
+                                                       ("gnd_port", int, None),
                                                        ("air_ip", str, ""),
-                                                       ("air_port", int, 80),
+                                                       ("air_port", int, None),
                                                        ("air_node", int, 0),
                                                        ("gnd_node", int, 0),
                                                        ("nmea_ip", str, ""),
@@ -92,7 +93,7 @@ class SilvusModule(mp_module.MPModule):
         utc_sec = now_time
         tm_t = time.gmtime(utc_sec)
         dstr = "%02d%02d%02d" % (tm_t.tm_mday, tm_t.tm_mon, tm_t.tm_year % 100)
-        subsecs = utc_sec - int(utc_sec);
+        subsecs = utc_sec - int(utc_sec)
         tstr = "%02d%02d%05.3f" % (tm_t.tm_hour, tm_t.tm_min, tm_t.tm_sec + subsecs)
         deg = abs(lat)
         minutes = (deg - int(deg))*60
@@ -116,49 +117,52 @@ class SilvusModule(mp_module.MPModule):
         except Exception as ex:
             print("Silvus NMEA send fail: %s" % ex)
 
-    def url(self, nodeip, api):
-        return "http://%s/%s" % (nodeip, api)
+    def url(self, nodeip, api, port=None):
+        host = nodeip
+        if port is not None:
+            host = ":".join([host, str(port)])
+        return "http://%s/%s" % (host, api)
 
     # Get Frequency == freq (nodeip)
-    def get_freq(self, nodeip):
+    def get_freq(self, radio):
         data = '{"jsonrpc":"2.0","method":"freq","id":"sbkb5u0c"}'
-        response = requests.post(self.url(nodeip, 'streamscape_api'), data=data)
+        response = self.make_request(radio, post_data=data)
         freql = (response.json()["result"])
         freq = int(freql[0])
         return freq
 
     # Get NoiseLevel == noise(nodeip)
-    def get_noise(self, nodeip):
+    def get_noise(self, radio):
         data = '{"jsonrpc":"2.0","method":"noise_level","id":"sbkb5u0c"}'
-        response = requests.post(self.url(nodeip, 'streamscape_api'), data=data)
+        response = self.make_request(radio, post_data=data)
         noisel = (response.json()["result"])
         return int(noisel[0])
 
     # Get Neighbor RSSI == nbr_rssi(nodeip, localnode)
-    def get_rssi(self, nodeip, remote):
+    def get_rssi(self, local, remote):
         data = '{"jsonrpc":"2.0","method":"nbr_rssi","params":["' + remote.node + '"],"id":"sbkb5u0c"}'
-        response = requests.post(self.url(nodeip, 'streamscape_api'), data=data)
+        response = self.make_request(local, post_data=data)
         nbr_rssi = (response.json()["result"])
         return nbr_rssi
 
     # Get network Status, output as an array
-    def network_status(self, nodeip):
+    def network_status(self, radio):
         data = '{"jsonrpc":"2.0","method":"network_status","id":"sbkb5u0c"}'
-        response = requests.post(self.url(nodeip, 'streamscape_api'), data=data)
+        response = self.make_request(radio, post_data=data)
         netstat = (response.json()["result"])
         return netstat
 
     # Get GPS status
-    def get_gps_state(self, nodeip):
+    def get_gps_state(self, radio):
         data = '{"jsonrpc":"2.0","method":"gps_mode","id":"sbkb5u0c"}'
-        response = requests.post(self.url(nodeip, 'streamscape_api'), data=data)
+        response = self.make_request(radio, post_data=data)
         gpsstat = (response.json()["result"])
         return gpsstat
 
     # Get max throughput between nodes
     def get_throughput(self, local, remote):
         data = '{"jsonrpc":"2.0","method":"link_throughput","params":["' + remote.node + '", "1"],"id":"sbkb5u0c"}'
-        response = requests.post(self.url(local.ip, 'streamscape_api'), data=data)
+        response = self.make_request(local, post_data=data)
         nbr_tp = (response.json()["result"])
         nbr_tp = (nbr_tp)[0]
         return nbr_tp
@@ -166,25 +170,34 @@ class SilvusModule(mp_module.MPModule):
     # Returns the TX MCS
     def get_neighbor_mcs(self, local, remote):
         data = '{"jsonrpc":"2.0","method":"nbr_mcs","params":["' + remote.node + '"],"id":"sbkb5u0c"}'
-        response = requests.post(self.url(local.ip, 'streamscape_api'), data=data)
+        response = self.make_request(local, post_data=data)
         nbr_mcs = (response.json()["result"])
         nbr_mcs = (nbr_mcs)[0]
         # print(data)
         return nbr_mcs
 
+    def make_request(self, radio, post_data):
+        print(f"Making request to {radio} {post_data} {radio.port}")
+        uri = self.url(radio.ip, 'streamscape_api', port=radio.port)
+        try:
+            result = requests.post(uri, data=post_data)
+        except Exception:  # FIXME: narrow this exception
+            return None
+        return result
+
     # Returns the RX MCS
-    def get_neighbor_mcs_rx(self, nodeip, remote):
+    def get_neighbor_mcs_rx(self, local, remote):
         data = '{"jsonrpc":"2.0","method":"nbr_mcs_rx","params":["' + remote.node + '"],"id":"sbkb5u0c"}'
-        response = requests.post(self.url(nodeip, 'streamscape_api'), data=data)
+        response = self.make_request(local, data=data)
         nbr_mcs_rx = (response.json()["result"])
         nbr_mcs_rx = (nbr_mcs_rx)[0]
         # print(data)
         return nbr_mcs_rx
 
     # Get GPS coords, output as an array
-    def get_gps_coords(self, nodeip):
+    def get_gps_coords(self, radio):
         data = '{"jsonrpc":"2.0","method":"gps_coordinates","id":"sbkb5u0c"}'
-        response = requests.post(self.url(nodeip, 'streamscape_api'), data=data)
+        response = self.make_request(radio, post_data=data)
         coords = (response.json()["result"])
         return coords
 
@@ -220,25 +233,55 @@ class SilvusModule(mp_module.MPModule):
         remote = Radio(remoteip, remoteport, remotenode)
         local = Radio(localip, localport, localnode)
 
-        self.values['TXMCS'] = float(self.get_neighbor_mcs(local, remote))
-        self.values['RXMCS'] = float(self.get_neighbor_mcs_rx(local, remote))
-        rssi = self.get_rssi(local, remote)
-        if len(rssi) >= 4:
-            self.values['TXRSSI1'] = float(rssi[0])
-            self.values['TXRSSI2'] = float(rssi[1])
-            self.values['TXRSSI3'] = float(rssi[2])
-            self.values['TXRSSI4'] = float(rssi[3])
-        rssi = self.get_rssi(remote, local)
-        if len(rssi) >= 4:
-            self.values['RXRSSI1'] = float(rssi[0])
-            self.values['RXRSSI2'] = float(rssi[1])
-            self.values['RXRSSI3'] = float(rssi[2])
-            self.values['RXRSSI4'] = float(rssi[3])
-        self.values['LOCNSE'] = float(self.get_noise(local))
-        self.values['REMNSE'] = float(self.get_noise(remote))
-        self.values['LINKSNR'] = float(self.network_status(local)[2])
-        self.values['LOCTPUT'] = float(self.get_throughput(local, remote))
-        self.values['REMTPUT'] = float(self.get_throughput(remote, local))
+        try:
+            self.values['TXMCS'] = float(self.get_neighbor_mcs(local, remote))
+        except Exception:
+            pass
+        try:
+            self.values['RXMCS'] = float(self.get_neighbor_mcs_rx(local, remote))
+        except Exception:
+            pass
+        try:
+            rssi = self.get_rssi(local, remote)
+            if len(rssi) >= 4:
+                self.values['TXRSSI1'] = float(rssi[0])
+                self.values['TXRSSI2'] = float(rssi[1])
+                self.values['TXRSSI3'] = float(rssi[2])
+                self.values['TXRSSI4'] = float(rssi[3])
+        except Exception:
+            pass
+
+        try:
+            rssi = self.get_rssi(remote, local)
+            if len(rssi) >= 4:
+                self.values['RXRSSI1'] = float(rssi[0])
+                self.values['RXRSSI2'] = float(rssi[1])
+                self.values['RXRSSI3'] = float(rssi[2])
+                self.values['RXRSSI4'] = float(rssi[3])
+        except Exception:
+            pass
+
+        try:
+            self.values['LOCNSE'] = float(self.get_noise(local))
+        except Exception:
+            pass
+        try:
+            self.values['REMNSE'] = float(self.get_noise(remote))
+        except Exception:
+            pass
+        try:
+            self.values['LINKSNR'] = float(self.network_status(local)[2])
+        except Exception:
+            pass
+
+        try:
+            self.values['LOCTPUT'] = float(self.get_throughput(local, remote))
+        except Exception:
+            pass
+        try:
+            self.values['REMTPUT'] = float(self.get_throughput(remote, local))
+        except Exception:
+            pass
 
         for f in self.values:
             self.send_named_float('SR_' + f, self.values[f])
