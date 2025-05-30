@@ -138,10 +138,10 @@ class SilvusModule(mp_module.MPModule):
         noisel = (response.json()["result"])
         return int(noisel[0])
 
-    # Get Neighbor RSSI == nbr_rssi(nodeip, localnode)
-    def get_rssi(self, local, remote):
-        data = '{"jsonrpc":"2.0","method":"nbr_rssi","params":["' + remote.node + '"],"id":"sbkb5u0c"}'
-        response = self.make_request(local, post_data=data)
+    # Get Neighbor RSSI == nbr_rssi(nodeip, gndnode)
+    def get_rssi(self, gnd, air):
+        data = '{"jsonrpc":"2.0","method":"nbr_rssi","params":["' + air.node + '"],"id":"sbkb5u0c"}'
+        response = self.make_request(gnd, post_data=data)
         nbr_rssi = (response.json()["result"])
         return nbr_rssi
 
@@ -160,17 +160,17 @@ class SilvusModule(mp_module.MPModule):
         return gpsstat
 
     # Get max throughput between nodes
-    def get_throughput(self, local, remote):
-        data = '{"jsonrpc":"2.0","method":"link_throughput","params":["' + remote.node + '", "1"],"id":"sbkb5u0c"}'
-        response = self.make_request(local, post_data=data)
+    def get_throughput(self, gnd, air):
+        data = '{"jsonrpc":"2.0","method":"link_throughput","params":["' + air.node + '", "1"],"id":"sbkb5u0c"}'
+        response = self.make_request(gnd, post_data=data)
         nbr_tp = (response.json()["result"])
         nbr_tp = (nbr_tp)[0]
         return nbr_tp
 
     # Returns the TX MCS
-    def get_neighbor_mcs(self, local, remote):
-        data = '{"jsonrpc":"2.0","method":"nbr_mcs","params":["' + remote.node + '"],"id":"sbkb5u0c"}'
-        response = self.make_request(local, post_data=data)
+    def get_neighbor_mcs(self, gnd, air):
+        data = '{"jsonrpc":"2.0","method":"nbr_mcs","params":["' + air.node + '"],"id":"sbkb5u0c"}'
+        response = self.make_request(gnd, post_data=data)
         nbr_mcs = (response.json()["result"])
         nbr_mcs = (nbr_mcs)[0]
         # print(data)
@@ -186,9 +186,9 @@ class SilvusModule(mp_module.MPModule):
         return result
 
     # Returns the RX MCS
-    def get_neighbor_mcs_rx(self, local, remote):
-        data = '{"jsonrpc":"2.0","method":"nbr_mcs_rx","params":["' + remote.node + '"],"id":"sbkb5u0c"}'
-        response = self.make_request(local, data=data)
+    def get_neighbor_mcs_rx(self, gnd, air):
+        data = '{"jsonrpc":"2.0","method":"nbr_mcs_rx","params":["' + air.node + '"],"id":"sbkb5u0c"}'
+        response = self.make_request(gnd, data=data)
         nbr_mcs_rx = (response.json()["result"])
         nbr_mcs_rx = (nbr_mcs_rx)[0]
         # print(data)
@@ -212,77 +212,77 @@ class SilvusModule(mp_module.MPModule):
         airip = self.silvus_settings.air_ip
         airport = self.silvus_settings.air_port
 
-        if len(gndip.split('.')) != 4:
-            return
-        if len(airip.split('.')) != 4:
-            return
-        if gndport <= 0:
-            return
-        if airport <= 0:
-            return
-
         class Radio():
-            def __init__(self, remote_ip, remote_port, remote_node):
-                self.ip = remote_ip
-                self.port = remote_port
-                self.node = remote_node
+            def __init__(self, ip, port, node):
+                self.ip = ip
+                self.port = port
+                self.node = node
 
-        localnode = str(self.silvus_settings.gnd_node)
-        remotenode = str(self.silvus_settings.air_node)
+        gnd = None
+        air = None
+        if len(gndip.split('.')) == 4 and gndport is not None and gndport > 0:
+            gndnode = str(self.silvus_settings.gnd_node)
+            gnd = Radio(gndip, gndport, gndnode)
 
-        remote = Radio(airip, airport, remotenode)
-        local = Radio(gndip, gndport, localnode)
+        if len(airip.split('.')) == 4 and airport is not None and airport > 0:
+            airnode = str(self.silvus_settings.air_node)
+            air = Radio(airip, airport, airnode)
 
-        try:
-            self.values['TXMCS'] = float(self.get_neighbor_mcs(local, remote))
-        except Exception:
-            pass
-        try:
-            self.values['RXMCS'] = float(self.get_neighbor_mcs_rx(local, remote))
-        except Exception:
-            pass
-        try:
-            rssi = self.get_rssi(local, remote)
-            if len(rssi) >= 4:
-                self.values['TXRSSI1'] = float(rssi[0])
-                self.values['TXRSSI2'] = float(rssi[1])
-                self.values['TXRSSI3'] = float(rssi[2])
-                self.values['TXRSSI4'] = float(rssi[3])
-        except Exception:
-            pass
+        if gnd and air:
+            try:
+                self.values['TXMCS'] = float(self.get_neighbor_mcs(gnd, air))
+            except Exception:
+                pass
+            try:
+                self.values['RXMCS'] = float(self.get_neighbor_mcs_rx(gnd, air))
+            except Exception:
+                pass
+            try:
+                rssi = self.get_rssi(gnd, air)
+                if len(rssi) >= 4:
+                    self.values['TXRSSI1'] = float(rssi[0])
+                    self.values['TXRSSI2'] = float(rssi[1])
+                    self.values['TXRSSI3'] = float(rssi[2])
+                    self.values['TXRSSI4'] = float(rssi[3])
+            except Exception:
+                pass
+            try:
+                rssi = self.get_rssi(air, gnd)
+                if len(rssi) >= 4:
+                    self.values['RXRSSI1'] = float(rssi[0])
+                    self.values['RXRSSI2'] = float(rssi[1])
+                    self.values['RXRSSI3'] = float(rssi[2])
+                    self.values['RXRSSI4'] = float(rssi[3])
+            except Exception:
+                pass
 
-        try:
-            rssi = self.get_rssi(remote, local)
-            if len(rssi) >= 4:
-                self.values['RXRSSI1'] = float(rssi[0])
-                self.values['RXRSSI2'] = float(rssi[1])
-                self.values['RXRSSI3'] = float(rssi[2])
-                self.values['RXRSSI4'] = float(rssi[3])
-        except Exception:
-            pass
+        if gnd:
+            try:
+                self.values['LOCNSE'] = float(self.get_noise(gnd))
+            except Exception as e:
+                print(f"Exception caught! {e=}")
+                pass
+        if air is not None:
+            try:
+                self.values['REMNSE'] = float(self.get_noise(air))
+            except Exception:
+                pass
 
-        try:
-            self.values['LOCNSE'] = float(self.get_noise(local))
-        except Exception as e:
-            print(f"Exception caught! {e=}")
-            pass
-        try:
-            self.values['REMNSE'] = float(self.get_noise(remote))
-        except Exception:
-            pass
-        try:
-            self.values['LINKSNR'] = float(self.network_status(local)[2])
-        except Exception:
-            pass
+        if gnd:
+            try:
+                self.values['LINKSNR'] = float(self.network_status(gnd)[2])
+            except Exception:
+                pass
 
-        try:
-            self.values['LOCTPUT'] = float(self.get_throughput(local, remote))
-        except Exception:
-            pass
-        try:
-            self.values['REMTPUT'] = float(self.get_throughput(remote, local))
-        except Exception:
-            pass
+        if gnd and air:
+            try:
+                self.values['LOCTPUT'] = float(self.get_throughput(gnd, air))
+            except Exception:
+                pass
+            try:
+                self.values['REMTPUT'] = float(self.get_throughput(air, gnd))
+            except Exception:
+                pass
 
         for f in self.values:
             self.send_named_float('SR_' + f, self.values[f])
