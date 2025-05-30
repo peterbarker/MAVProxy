@@ -207,18 +207,18 @@ class SilvusModule(mp_module.MPModule):
             return
         self.last_log_time = now
 
-        localip = self.silvus_settings.gnd_ip
-        localport = self.silvus_settings.gnd_port
-        remoteip = self.silvus_settings.air_ip
-        remoteport = self.silvus_settings.air_port
+        gndip = self.silvus_settings.gnd_ip
+        gndport = self.silvus_settings.gnd_port
+        airip = self.silvus_settings.air_ip
+        airport = self.silvus_settings.air_port
 
-        if len(localip.split('.')) != 4:
+        if len(gndip.split('.')) != 4:
             return
-        if len(remoteip.split('.')) != 4:
+        if len(airip.split('.')) != 4:
             return
-        if localport <= 0:
+        if gndport <= 0:
             return
-        if remoteport <= 0:
+        if airport <= 0:
             return
 
         class Radio():
@@ -230,8 +230,8 @@ class SilvusModule(mp_module.MPModule):
         localnode = str(self.silvus_settings.gnd_node)
         remotenode = str(self.silvus_settings.air_node)
 
-        remote = Radio(remoteip, remoteport, remotenode)
-        local = Radio(localip, localport, localnode)
+        remote = Radio(airip, airport, remotenode)
+        local = Radio(gndip, gndport, localnode)
 
         try:
             self.values['TXMCS'] = float(self.get_neighbor_mcs(local, remote))
