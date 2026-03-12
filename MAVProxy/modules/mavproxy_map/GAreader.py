@@ -82,7 +82,7 @@ class ERMap:
         fid.close()
 
         # convert input string to required format (Note default format is numpy.float32)
-        grid_as_float = numpy.fromstring(input_string, data_format)
+        grid_as_float = numpy.frombuffer(input_string, data_format)
         return grid_as_float
 
     def getHeaderParam(self, key):

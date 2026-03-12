@@ -355,7 +355,7 @@ class RendererWx(RendererBase):
             w=self.width
             h=self.height
         rows, cols, image_str = im.as_rgba_str()
-        image_array = np.fromstring(image_str, np.uint8)
+        image_array = np.frombuffer(image_str, np.uint8)
         image_array.shape = rows, cols, 4
         bitmap = wx.BitmapFromBufferRGBA(cols,rows,image_array)
         gc = self.get_gc()
