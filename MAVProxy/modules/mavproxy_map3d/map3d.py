@@ -163,6 +163,11 @@ class Map3D:
     def set_rally(self, pts):
         self._put(('rally', list(pts)))
 
+    def set_corridor(self, nodes, edges):
+        '''nodes: (lat, lon, amsl, radius_m, node_type); edges: (from, to,
+        radius_m) with from and to indexes into nodes'''
+        self._put(('corridor', list(nodes), list(edges)))
+
     def set_follow(self, enable):
         self._put(('follow', bool(enable)))
 

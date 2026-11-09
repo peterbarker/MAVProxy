@@ -100,6 +100,7 @@ class Map3DModule(mp_module.MPModule):
         self.wp_change_time = 0
         self.fence_change_time = 0
         self.rally_change_time = 0
+        self.corridor_change_time = 0
         self.last_vehicle_send = 0
         self.last_global_position = 0
         self.last_attitude = (0.0, 0.0, 0.0)
@@ -194,6 +195,7 @@ class Map3DModule(mp_module.MPModule):
         self.send_mission()
         self.send_fence()
         self.send_rally()
+        self.send_corridor()
         self.send_cached_state()
         self.send_kml()
 
@@ -274,6 +276,7 @@ class Map3DModule(mp_module.MPModule):
             self.send_mission()
             self.send_fence()
             self.send_rally()
+            self.send_corridor()
 
         if attitude is None:
             attitude = self.last_attitude
@@ -793,6 +796,17 @@ class Map3DModule(mp_module.MPModule):
         self.map.set_rally([(lat, lon, amsl, r.alt) for
                             ((lat, lon, amsl, _), r) in zip(resolved, raw)])
 
+    def send_corridor(self):
+        '''draw the corridor graph: a sphere for each node and a cylinder
+        for each edge'''
+        if self.map is None:
+            return
+        corridor = self.module('corridor')
+        if corridor is None:
+            return
+        (nodes, edges) = corridor.corridor_graph()
+        self.map.set_corridor(nodes, edges)
+
     @staticmethod
     def _kml_state(kml_mod):
         if kml_mod is None:
@@ -888,6 +902,13 @@ class Map3DModule(mp_module.MPModule):
                 self.send_rally()
                 # a return to launch may go to one
                 self.send_mission()
+        except Exception:
+            pass
+        try:
+            corridor_change = self.module('corridor').last_change()
+            if corridor_change != self.corridor_change_time:
+                self.corridor_change_time = corridor_change
+                self.send_corridor()
         except Exception:
             pass
         if self.terrain_resolved:

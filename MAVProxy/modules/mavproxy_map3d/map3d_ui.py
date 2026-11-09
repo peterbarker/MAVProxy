@@ -530,6 +530,8 @@ class Map3DFrame(wx.Frame):
             self.elements.set_fence(msg[1], self.terrain.height_at)
         elif kind == 'rally':
             self.elements.set_rally(msg[1])
+        elif kind == 'corridor':
+            self.elements.set_corridor(msg[1], msg[2])
         elif kind == 'lookat':
             (_, lat, lon, amsl, dist) = msg
             if not self.fpv_enabled:

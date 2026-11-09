@@ -30,6 +30,22 @@ MISSION_CIRCLE_SEGMENTS = 64
 MISSION_ARROW_COUNT = 60
 MISSION_ARROW_PIXELS = 22.0
 
+# corridor graph nodes by MAV_CORRIDOR_NODE_TYPE: waypoint, nest, divert
+# site, ditch site
+CORRIDOR_NODE_COLOURS = {
+    0: (0.3, 0.6, 1.0),
+    1: (0.0, 1.0, 0.0),
+    2: (1.0, 0.85, 0.0),
+    3: (1.0, 0.25, 0.25),
+}
+CORRIDOR_EDGE_COLOUR = (0.0, 0.8, 1.0)
+CORRIDOR_NODE_OPACITY = 0.35
+CORRIDOR_EDGE_OPACITY = 0.25
+# nodes and edges with no radius are drawn this big
+CORRIDOR_MIN_RADIUS = 2.0
+CORRIDOR_RESOLUTION = 32
+CORRIDOR_NODE_TYPE_NAMES = {0: 'waypoint', 1: 'nest', 2: 'divert', 3: 'ditch'}
+
 # FlightCoach/Flight Plotter, Artur Uzieblo: js/geometries/RibbonMesh.js.
 # Top and underside palettes in 15 degree pilot-roll bands, then the right
 # (green) and left (red) edges. Ribbon thickness is wingspan / 15.
@@ -486,6 +502,43 @@ def _label(point_enu, text, colour, size=MISSION_LABEL_SIZE):
     return actor
 
 
+def _surface_actor(source, colour, opacity, zexag):
+    '''a translucent surface of a shape built at true scale, stretched
+    vertically like the terrain'''
+    mapper = vtk.vtkPolyDataMapper()
+    mapper.SetInputConnection(source.GetOutputPort())
+    actor = vtk.vtkActor()
+    actor.SetMapper(mapper)
+    actor.SetScale(1.0, 1.0, zexag)
+    prop = actor.GetProperty()
+    prop.SetColor(*colour)
+    prop.SetOpacity(opacity)
+    return actor
+
+
+def _sphere(centre, radius, colour, opacity, zexag):
+    '''sphere around an unexaggerated ENU centre'''
+    source = vtk.vtkSphereSource()
+    source.SetCenter(*centre)
+    source.SetRadius(radius)
+    source.SetThetaResolution(CORRIDOR_RESOLUTION)
+    source.SetPhiResolution(CORRIDOR_RESOLUTION // 2)
+    return _surface_actor(source, colour, opacity, zexag)
+
+
+def _cylinder(p0, p1, radius, colour, opacity, zexag):
+    '''open-ended cylinder around the unexaggerated ENU segment p0-p1'''
+    line = vtk.vtkLineSource()
+    line.SetPoint1(*p0)
+    line.SetPoint2(*p1)
+    tube = vtk.vtkTubeFilter()
+    tube.SetInputConnection(line.GetOutputPort())
+    tube.SetRadius(radius)
+    tube.SetNumberOfSides(CORRIDOR_RESOLUTION)
+    tube.CappingOff()
+    return _surface_actor(tube, colour, opacity, zexag)
+
+
 def _points(points_enu, colour, size):
     vpts = vtk.vtkPoints()
     verts = vtk.vtkCellArray()
@@ -526,6 +579,7 @@ class ElementManager:
         self.terrain_height = None
         self.fence = []
         self.rally = []
+        self.corridor = ([], [])
         self.fence_geometry = None
         self.kml_features = []
         self.kml_geometry = None
@@ -785,6 +839,7 @@ class ElementManager:
             return
         self.mission_labelled = enable
         self.refresh_mission()
+        self.refresh_corridor()
 
     def set_mission_label_size(self, size):
         '''how big those labels are drawn, in points on the screen'''
@@ -795,6 +850,7 @@ class ElementManager:
         self.mission_label_size = size
         if self.mission_labelled:
             self.refresh_mission()
+            self.refresh_corridor()
 
     def refresh_mission(self):
         '''rebuild the mission actors from the last mission drawn'''
@@ -1051,6 +1107,51 @@ class ElementManager:
                              self.home_amsl + alt if amsl is None else amsl)
                    for (lat, lon, amsl, alt) in self.rally]
         self._replace('rally', [_points(markers, (0.4, 0.8, 1.0), 12)])
+
+    def set_corridor(self, nodes, edges):
+        '''nodes: (lat, lon, amsl, radius, type); edges: (from, to, radius)'''
+        self.corridor = (list(nodes), list(edges))
+        self.refresh_corridor()
+
+    def refresh_corridor(self):
+        '''each node is a sphere and each edge a cylinder of its radius,
+        with the centreline drawn through it; an edge flown one way only
+        has a dashed centreline'''
+        (nodes, edges) = self.corridor
+        actors = []
+        centres = [enu(lat, lon, amsl, self.lat0, self.lon0)
+                   for (lat, lon, amsl, _, _) in nodes]
+        pairs = set((e[0], e[1]) for e in edges)
+        drawn = set()
+        for (node_from, node_to, radius) in edges:
+            if node_from >= len(nodes) or node_to >= len(nodes):
+                continue
+            key = tuple(sorted((node_from, node_to)))
+            if key in drawn:
+                continue
+            drawn.add(key)
+            (p0, p1) = (centres[node_from], centres[node_to])
+            actors.append(_cylinder(p0, p1, max(radius, CORRIDOR_MIN_RADIUS),
+                                    CORRIDOR_EDGE_COLOUR,
+                                    CORRIDOR_EDGE_OPACITY, self.zexag))
+            one_way = (node_to, node_from) not in pairs
+            centreline = [(p[0], p[1], p[2] * self.zexag) for p in (p0, p1)]
+            actors.append(_polyline(centreline, CORRIDOR_EDGE_COLOUR, 2,
+                                    dashed=one_way))
+        for ((lat, lon, amsl, radius, node_type), centre) in zip(nodes, centres):
+            colour = CORRIDOR_NODE_COLOURS.get(node_type, (1.0, 1.0, 1.0))
+            radius = max(radius, CORRIDOR_MIN_RADIUS)
+            actors.append(_sphere(centre, radius, colour,
+                                  CORRIDOR_NODE_OPACITY, self.zexag))
+        if self.mission_labelled:
+            for (i, ((_, _, _, radius, node_type), centre)) in enumerate(zip(nodes, centres)):
+                colour = CORRIDOR_NODE_COLOURS.get(node_type, (1.0, 1.0, 1.0))
+                top = (centre[0], centre[1],
+                       (centre[2] + max(radius, CORRIDOR_MIN_RADIUS)) * self.zexag)
+                name = CORRIDOR_NODE_TYPE_NAMES.get(node_type, '?')
+                actors.append(_label(top, '%u %s' % (i, name), colour,
+                                     self.mission_label_size))
+        self._replace('corridor', actors)
 
     def refresh_vehicle(self):
         if self.vehicle_pose is None:
